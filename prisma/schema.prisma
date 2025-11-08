@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserType {
+  PLAYER
+  DEV
+}
+
+model User {
+  id         String     @id @default(cuid()) @map("user_id")
+  username   String     @unique
+  password   String     @map("password_hash")
+  email      String?    @unique
+  userType   UserType   @default(PLAYER)     @map("user_type")
+  createdAt  DateTime   @default(now())      @map("created_at")
+
+  games      Game[]     @relation("UserGames")
+  downloads  Download[]
+
+  @@map("users")
+}
+
+model Game {
+  id          String       @id @default(cuid()) @map("game_id")
+  developerId String       @map("developer_id")
+  title       String
+  description String
+  genre       String
+  s3Key       String?      @map("s3_key")        // path no S3
+  likes       Int          @default(0)
+  dislikes    Int          @default(0)
+  createdAt   DateTime     @default(now())      @map("created_at")
+
+  developer   User         @relation("UserGames", fields: [developerId], references: [id], onDelete: Cascade)
+  images      GameImage[]
+  downloads   Download[]
+
+  @@index([developerId])
+  @@index([genre])
+  @@map("games")
+}
+
+model GameImage {
+  id         String  @id @default(cuid()) @map("image_id")
+  gameId     String  @map("game_id")
+  s3Key      String  @map("s3_key")      // path no S3
+  orderIndex Int     @map("order_index")
+
+  game       Game    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+  @@map("game_images")
+}
+
+model Download {
+  id           String   @id @default(cuid()) @map("download_id")
+  gameId       String   @map("game_id")
+  userId       String   @map("user_id")
+  downloadDate DateTime @default(now())      @map("download_date")
+
+  game         Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, gameId])
+  @@index([gameId])
+  @@index([userId])
+  @@map("downloads")
+}
