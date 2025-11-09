@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/services/dynamodb.service.ts
 import { ddb } from '../config/aws';
-// 👇 1. Importar os 'Commands' específicos do SDK v3
+// 👇 1. Importa os 'Commands' específicos do SDK v3
 import {
   PutCommand,
   GetCommand,
@@ -58,7 +58,7 @@ export class RatingsService {
       GSI1SK: `USER#${userId}`,
     };
 
-    // 2. Usar a sintaxe ddb.send(new PutCommand(...))
+    // 2. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new PutCommand({
         TableName: RATINGS_TABLE,
@@ -70,7 +70,7 @@ export class RatingsService {
   }
 
   async getRating(userId: string, gameId: string): Promise<Rating | null> {
-    // 3. Usar a sintaxe ddb.send(new GetCommand(...))
+    // 3. Usa a sintaxe v3 ddb.send(...)
     const result = await ddb.send(
       new GetCommand({
         TableName: RATINGS_TABLE,
@@ -85,7 +85,7 @@ export class RatingsService {
   }
 
   async deleteRating(userId: string, gameId: string): Promise<void> {
-    // 4. Usar a sintaxe ddb.send(new DeleteCommand(...))
+    // 4. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new DeleteCommand({
         TableName: RATINGS_TABLE,
@@ -98,7 +98,7 @@ export class RatingsService {
   }
 
   async getGameRatings(gameId: string): Promise<Rating[]> {
-    // 5. Usar a sintaxe ddb.send(new QueryCommand(...))
+    // 5. Usa a sintaxe v3 ddb.send(...)
     const result = await ddb.send(
       new QueryCommand({
         TableName: RATINGS_TABLE,
@@ -146,7 +146,7 @@ export class ReviewsService {
       GSI1SK: `REVIEW#${timestamp}`,
     };
 
-    // 6. Usar a sintaxe ddb.send(new PutCommand(...))
+    // 6. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new PutCommand({
         TableName: REVIEWS_TABLE,
@@ -162,7 +162,7 @@ export class ReviewsService {
     limit: number = 20,
     lastKey?: unknown,
   ): Promise<{ items: Review[]; lastKey?: unknown }> {
-    // 7. Usar a sintaxe ddb.send(new QueryCommand(...))
+    // 7. Usa a sintaxe v3 ddb.send(...)
     const result = await ddb.send(
       new QueryCommand({
         TableName: REVIEWS_TABLE,
@@ -172,7 +172,7 @@ export class ReviewsService {
         },
         ScanIndexForward: false, // (Mais recente primeiro)
         Limit: limit,
-        ExclusiveStartKey: lastKey as Record<string, any> | undefined, // Corrigido
+        ExclusiveStartKey: lastKey as Record<string, any> | undefined,
       }),
     );
 
@@ -183,7 +183,7 @@ export class ReviewsService {
   }
 
   async getUserReviews(userId: string, limit: number = 20): Promise<Review[]> {
-    // 8. Usar a sintaxe ddb.send(new QueryCommand(...))
+    // 8. Usa a sintaxe v3 ddb.send(...)
     const result = await ddb.send(
       new QueryCommand({
         TableName: REVIEWS_TABLE,
@@ -201,7 +201,7 @@ export class ReviewsService {
   }
 
   async deleteReview(gameId: string, reviewSK: string): Promise<void> {
-    // 9. Usar a sintaxe ddb.send(new DeleteCommand(...))
+    // 9. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new DeleteCommand({
         TableName: REVIEWS_TABLE,
@@ -221,7 +221,8 @@ export class LogsService {
     action: string,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
-
+    
+    // 👇 ESTA É A LINHA QUE VOCÊ PEDIU (e já estava no primeiro arquivo)
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[LOG_BYPASS] Ação: ${action}`, metadata || '');
       return; // <-- Pula a conexão com o DynamoDB
@@ -236,11 +237,12 @@ export class LogsService {
       action,
       timestamp: now.toISOString(),
       level,
-      TTL: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+      TTL: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 dias
       ...(metadata || {}),
     };
 
     try {
+      // 10. Usa a sintaxe v3 ddb.send(...)
       await ddb.send(
         new PutCommand({
           TableName: logTable,

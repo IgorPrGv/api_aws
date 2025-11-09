@@ -7,9 +7,11 @@ import { publishUploadEvent } from '../services/events.service';
 import { logCrud } from '../services/logs.storage';
 
 export async function uploadFile(req: Request, res: Response) {
+  console.log('[Files] Tentativa de upload de arquivo único (uploadFile)...');
   try {
     const file = (req as any).file as Express.Multer.File | undefined;
     if (!file) {
+      console.warn('[Files] Falha no upload: Nenhum arquivo enviado (400).');
       return res.status(400).json({ error: { message: 'Arquivo não enviado' } });
     }
 
@@ -17,26 +19,27 @@ export async function uploadFile(req: Request, res: Response) {
     const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
     const key = `uploads/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
-    // Upload para S3
+    console.log(`[Files] Enviando '${fileName}' para o S3 com a chave: ${key}`);
     await uploadBufferToS3({ 
       key, 
       contentType: file.mimetype, 
       body: file.buffer 
     });
 
-    // Publicar evento no SNS
+    console.log(`[Files] Publicando evento (SNS) para: ${key}`);
     await publishUploadEvent(fileName, key);
 
-    // Log no DynamoDB
+    console.log(`[Files] Registando log (DynamoDB) para: ${key}`);
     await logCrud('UPLOAD', { fileName, key, size: file.size });
 
+    console.log(`[Files] Upload de '${fileName}' (ID: ${key}) concluído.`);
     return res.json({ 
       ok: true, 
       key,
       url: getS3PublicUrl(key)
     });
   } catch (err: any) {
-    console.error('Upload error:', err);
+    console.error('[Files] Erro fatal no upload de arquivo:', err.message);
     return res.status(500).json({ 
       error: { message: 'Erro ao processar o arquivo' } 
     });
@@ -44,14 +47,17 @@ export async function uploadFile(req: Request, res: Response) {
 }
 
 export async function uploadMultipleFiles(req: Request, res: Response) {
+  console.log('[Files] Tentativa de upload de múltiplos arquivos (uploadMultipleFiles)...');
   try {
     const files = (req as any).files as Express.Multer.File[] | undefined;
     
     if (!files || files.length === 0) {
+      console.warn('[Files] Falha no upload: Nenhum arquivo enviado (400).');
       return res.status(400).json({ error: { message: 'Nenhum arquivo enviado' } });
     }
 
     const folder = String(req.body.folder || 'uploads');
+    console.log(`[Files] Enviando ${files.length} arquivos para a pasta '${folder}' no S3...`);
     const keys = await uploadMultipleToS3(files, folder);
 
     await logCrud('UPLOAD', { 
@@ -60,13 +66,14 @@ export async function uploadMultipleFiles(req: Request, res: Response) {
       keys 
     });
 
+    console.log(`[Files] ${files.length} arquivos enviados com sucesso para '${folder}'.`);
     return res.json({ 
       ok: true, 
       keys,
       urls: keys.map(k => getS3PublicUrl(k))
     });
   } catch (err: any) {
-    console.error('Multiple upload error:', err);
+    console.error('[Files] Erro fatal no upload múltiplo:', err.message);
     return res.status(500).json({ 
       error: { message: 'Erro ao processar os arquivos' } 
     });
@@ -74,10 +81,12 @@ export async function uploadMultipleFiles(req: Request, res: Response) {
 }
 
 export async function uploadGameFiles(req: Request, res: Response) {
+  console.log('[Files] Tentativa de upload de arquivos de jogo (uploadGameFiles)...');
   try {
     const files = (req as any).files;
     
     if (!files) {
+      console.warn('[Files] Falha no upload do jogo: Nenhum arquivo enviado (400).');
       return res.status(400).json({ error: { message: 'Nenhum arquivo enviado' } });
     }
 
@@ -88,15 +97,18 @@ export async function uploadGameFiles(req: Request, res: Response) {
 
     // Upload das imagens
     if (images && images.length > 0) {
+      console.log(`[Files] Enviando ${images.length} imagens do jogo para o S3...`);
       const imageKeys = await uploadMultipleToS3(images.slice(0, 3), 'game-images');
       result.imageKeys = imageKeys;
       result.imageUrls = imageKeys.map(k => getS3PublicUrl(k));
+      console.log(`[Files] Imagens do jogo enviadas.`);
     }
 
     // Upload do arquivo do game
     if (gameFile && gameFile.length > 0) {
       const file = gameFile[0];
       if (file) {
+        console.log(`[Files] Enviando arquivo do jogo '${file.originalname}' para o S3...`);
         const ext = file.originalname.includes('.') ? file.originalname.split('.').pop() : 'bin';
         const key = `game-files/${Date.now()}-${crypto.randomUUID()}.${ext}`;
         
@@ -108,6 +120,7 @@ export async function uploadGameFiles(req: Request, res: Response) {
 
         result.s3Key = key;
         result.fileUrl = getS3PublicUrl(key);
+        console.log(`[Files] Arquivo do jogo enviado com a chave: ${key}`);
       }
     }
 
@@ -117,9 +130,10 @@ export async function uploadGameFiles(req: Request, res: Response) {
       hasGameFile: !!gameFile
     });
 
+    console.log(`[Files] Upload dos arquivos do jogo concluído.`);
     return res.json(result);
   } catch (err: any) {
-    console.error('Game files upload error:', err);
+    console.error('[Files] Erro fatal no upload dos arquivos do jogo:', err.message);
     return res.status(500).json({ 
       error: { message: 'Erro ao processar arquivos do game' } 
     });

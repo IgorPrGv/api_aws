@@ -78,7 +78,6 @@ export async function publishNotification(subject: string, message: string) {
   }
 
   try {
-    // 👇 4. Usar a sintaxe v3
     await sns.send(
       new PublishCommand({
         TopicArn: snsTopic,

@@ -8,13 +8,10 @@ export async function resizeAndSaveImage(
   suffix = '_resized',
 ) {
   const resized = await sharp(buffer).resize(800).toBuffer();
-  // Corrigi a regex para lidar com chaves sem extensão (opcional, mas mais seguro)
   const resizedKey = originalKey.replace(
     /(\.[^.]+)$/,
     `${suffix}$1`,
   );
-
-  // 👇 2. Usar a sintaxe v3: s3.send(new PutObjectCommand(...))
   await s3.send(
     new PutObjectCommand({
       Bucket: s3Bucket,

@@ -1,19 +1,31 @@
 // src/routes/index.ts
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express'; // 1. Importar tipos
 import { filesRouter } from './files.routes';
 import { gamesRouter } from './games.routes';
 import { reviewsRouter } from './reviews.routes';
 import { ratingsRouter } from './ratings.routes';
+import authRoutes from "./auth.routes";
 
 export const routes = Router();
 
+routes.use((req: Request, res: Response, next: NextFunction) => {
+  console.log(`[API] ➡️ Requisição Recebida: ${req.method} ${req.originalUrl}`);
+  next(); 
+});
+
 // Health check
-routes.get('/health', (_req, res) => res.json({ 
-  ok: true,
-  timestamp: new Date().toISOString(),
-  service: 'GameWebsite API',
-  version: '1.0.0'
-}));
+routes.get('/health', (_req, res) => {
+  console.log('[API] 🩺 Verificação /health solicitada.');
+  res.json({ 
+    ok: true,
+    timestamp: new Date().toISOString(),
+    service: 'GameWebsite API',
+    version: '1.0.0'
+  });
+});
+
+// aqui vira /auth/... (e com prefixo global, /api/auth/...)
+routes.use("/auth", authRoutes);
 
 // Files
 routes.use('/files', filesRouter);

@@ -6,11 +6,13 @@ import { ratingsService, RatingType } from '../services/dynamodb.services';
 import { logCrud } from '../services/logs.storage';
 
 export async function likeGame(req: Request, res: Response) {
+  const gameId = String(req.params.id);
+  const userId = (req as any).user?.id;
+  console.log(`[Ratings] Usuário ${userId} deu LIKE no jogo ${gameId}`);
+  
   try {
-    const gameId = String(req.params.id);
-    const userId = (req as any).user?.id;
-
     if (!userId) {
+      console.warn(`[Ratings] Falha no LIKE: Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
@@ -19,9 +21,11 @@ export async function likeGame(req: Request, res: Response) {
     const oldType = existing?.type;
 
     // Salvar no DynamoDB
+    console.log(`[Ratings] Salvando LIKE no DynamoDB...`);
     await ratingsService.setRating(userId, gameId, RatingType.LIKE);
 
     // Atualizar contadores no RDS
+    console.log(`[Ratings] Atualizando contadores (Likes) no RDS...`);
     if (!existing) {
       await prisma.game.update({ 
         where: { id: gameId }, 
@@ -44,32 +48,36 @@ export async function likeGame(req: Request, res: Response) {
     });
 
     await logCrud('UPDATE', { resource: 'rating', action: 'LIKE', userId, gameId });
-
+    console.log(`[Ratings] LIKE no jogo ${gameId} registrado com sucesso.`);
     res.json({ 
       likes: game?.likes ?? 0, 
       dislikes: game?.dislikes ?? 0, 
       userRating: 'LIKE' 
     });
   } catch (e: any) {
-    console.error('Error liking game:', e);
+    console.error(`[Ratings] Erro ao dar LIKE no jogo ${gameId}:`, e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao curtir game' } });
   }
 }
 
 export async function dislikeGame(req: Request, res: Response) {
+  const gameId = String(req.params.id);
+  const userId = (req as any).user?.id;
+  console.log(`[Ratings] Usuário ${userId} deu DISLIKE no jogo ${gameId}`);
+  
   try {
-    const gameId = String(req.params.id);
-    const userId = (req as any).user?.id;
-
     if (!userId) {
+      console.warn(`[Ratings] Falha no DISLIKE: Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
     const existing = await ratingsService.getRating(userId, gameId);
     const oldType = existing?.type;
 
+    console.log(`[Ratings] Salvando DISLIKE no DynamoDB...`);
     await ratingsService.setRating(userId, gameId, RatingType.DISLIKE);
 
+    console.log(`[Ratings] Atualizando contadores (Dislikes) no RDS...`);
     if (!existing) {
       await prisma.game.update({ 
         where: { id: gameId }, 
@@ -91,32 +99,36 @@ export async function dislikeGame(req: Request, res: Response) {
     });
 
     await logCrud('UPDATE', { resource: 'rating', action: 'DISLIKE', userId, gameId });
-
+    console.log(`[Ratings] DISLIKE no jogo ${gameId} registrado com sucesso.`);
     res.json({ 
       likes: game?.likes ?? 0, 
       dislikes: game?.dislikes ?? 0, 
       userRating: 'DISLIKE' 
     });
   } catch (e: any) {
-    console.error('Error disliking game:', e);
+    console.error(`[Ratings] Erro ao dar DISLIKE no jogo ${gameId}:`, e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao descurtir game' } });
   }
 }
 
 export async function removeRating(req: Request, res: Response) {
+  const gameId = String(req.params.id);
+  const userId = (req as any).user?.id;
+  console.log(`[Ratings] Usuário ${userId} removeu o rating do jogo ${gameId}`);
+  
   try {
-    const gameId = String(req.params.id);
-    const userId = (req as any).user?.id;
-
     if (!userId) {
+      console.warn(`[Ratings] Falha ao remover rating: Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
     const existing = await ratingsService.getRating(userId, gameId);
 
     if (existing) {
+      console.log(`[Ratings] Deletando rating do DynamoDB...`);
       await ratingsService.deleteRating(userId, gameId);
 
+      console.log(`[Ratings] Atualizando contadores (Remoção) no RDS...`);
       if (existing.type === RatingType.LIKE) {
         await prisma.game.update({ 
           where: { id: gameId }, 
@@ -128,6 +140,8 @@ export async function removeRating(req: Request, res: Response) {
           data: { dislikes: { decrement: 1 } } 
         });
       }
+    } else {
+      console.log(`[Ratings] Usuário ${userId} tentou remover rating, mas nenhum existia.`);
     }
 
     const game = await prisma.game.findUnique({ 
@@ -136,32 +150,34 @@ export async function removeRating(req: Request, res: Response) {
     });
 
     await logCrud('DELETE', { resource: 'rating', userId, gameId });
-
+    console.log(`[Ratings] Rating do jogo ${gameId} removido com sucesso.`);
     res.json({ 
       likes: game?.likes ?? 0, 
       dislikes: game?.dislikes ?? 0, 
       userRating: null 
     });
   } catch (e: any) {
-    console.error('Error removing rating:', e);
+    console.error(`[Ratings] Erro ao remover rating do jogo ${gameId}:`, e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao remover avaliação' } });
   }
 }
 
 export async function getUserRating(req: Request, res: Response) {
+  const gameId = String(req.params.id);
+  const userId = (req as any).user?.id;
+  console.log(`[Ratings] Buscando rating do usuário ${userId} para o jogo ${gameId}`);
+  
   try {
-    const gameId = String(req.params.id);
-    const userId = (req as any).user?.id;
-
     if (!userId) {
+      console.warn(`[Ratings] Falha ao buscar rating: Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
     const rating = await ratingsService.getRating(userId, gameId);
-
+    console.log(`[Ratings] Rating do usuário ${userId} para o jogo ${gameId} encontrado: ${rating?.type || 'null'}.`);
     res.json({ userRating: rating?.type || null });
   } catch (e: any) {
-    console.error('Error getting user rating:', e);
+    console.error(`[Ratings] Erro ao buscar rating do usuário ${userId} para o jogo ${gameId}:`, e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao obter avaliação' } });
   }
 }

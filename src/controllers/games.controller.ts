@@ -7,6 +7,7 @@ import { getS3PublicUrl, deleteFromS3 } from '../services/storage.services';
 import { publishGameEvent } from '../services/events.service';
 
 export async function listGames(req: Request, res: Response) {
+  console.log('[Games] Processando listagem de jogos (listGames)...');
   try {
     const search = String(req.query.search || '').trim();
     const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
@@ -46,16 +47,18 @@ export async function listGames(req: Request, res: Response) {
     }));
 
     await logCrud('READ', { resource: 'game', count: items.length, page });
+    console.log(`[Games] Jogos listados com sucesso. Total: ${items.length}`);
     res.json({ items: gamesWithUrls, page, pageSize, total });
   } catch (e: any) {
-    console.error('Error listing games:', e);
+    console.error('[Games] Erro ao listar jogos (listGames):', e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao listar games' } });
   }
 }
 
 export async function getGameById(req: Request, res: Response) {
+  const id = String(req.params.id);
+  console.log(`[Games] Buscando jogo por ID: ${id}`);
   try {
-    const id = String(req.params.id);
     const game = await prisma.game.findUnique({ 
       where: { id },
       include: {
@@ -65,6 +68,7 @@ export async function getGameById(req: Request, res: Response) {
     });
 
     if (!game) {
+      console.warn(`[Games] Jogo não encontrado (404): ${id}`);
       return res.status(404).json({ error: { message: 'Game não encontrado' } });
     }
 
@@ -79,23 +83,27 @@ export async function getGameById(req: Request, res: Response) {
     };
 
     await logCrud('READ', { resource: 'game', id });
+    console.log(`[Games] Jogo '${game.title}' (ID: ${id}) encontrado.`);
     res.json(gameWithUrls);
   } catch (e: any) {
-    console.error('Error getting game:', e);
+    console.error(`[Games] Erro ao buscar jogo (ID: ${id}):`, e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao buscar game' } });
   }
 }
 
 export async function createGame(req: Request, res: Response) {
+  console.log('[Games] Tentativa de criar jogo (createGame)...');
   try {
     const userId = (req as any).user?.id;
     if (!userId) {
+      console.warn('[Games] Falha ao criar jogo: Usuário não autenticado (401).');
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
     const { title, description, genre, s3Key, imageKeys } = req.body;
 
     if (!title || !description || !genre) {
+      console.warn(`[Games] Falha ao criar jogo: Campos obrigatórios em falta.`);
       return res.status(400).json({ 
         error: { message: 'title, description e genre são obrigatórios' } 
       });
@@ -109,6 +117,7 @@ export async function createGame(req: Request, res: Response) {
         }))
       : [];
 
+    console.log(`[Games] Salvando jogo '${title}' no banco de dados (RDS)...`);
     const game = await prisma.game.create({
       data: {
         title,
@@ -126,9 +135,10 @@ export async function createGame(req: Request, res: Response) {
       },
     });
 
+    console.log(`[Games] Registando log (DynamoDB)...`);
     await logCrud('CREATE', { resource: 'game', id: game.id, userId });
     
-    // Publicar evento no SNS
+    console.log(`[Games] Publicando evento (SNS)...`);
     await publishGameEvent('GAME_CREATED', {
       gameId: game.id,
       title: game.title,
@@ -145,30 +155,34 @@ export async function createGame(req: Request, res: Response) {
       })),
     };
 
+    console.log(`[Games] Jogo '${game.title}' (ID: ${game.id}) criado com sucesso.`);
     res.status(201).json(gameWithUrls);
   } catch (e: any) {
-    console.error('Error creating game:', e);
+    console.error('[Games] Erro ao criar jogo:', e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao criar game' } });
   }
 }
 
 export async function updateGame(req: Request, res: Response) {
+  const id = String(req.params.id);
+  console.log(`[Games] Tentativa de atualizar jogo ID: ${id}`);
   try {
-    const id = String(req.params.id);
     const userId = (req as any).user?.id;
     const { title, description, genre } = req.body;
 
     if (!userId) {
+      console.warn(`[Games] Falha ao atualizar jogo: Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
-    // Verificar se o game pertence ao usuário
     const existing = await prisma.game.findUnique({ where: { id } });
     if (!existing) {
+      console.warn(`[Games] Falha ao atualizar jogo: Jogo não encontrado (404). ID: ${id}`);
       return res.status(404).json({ error: { message: 'Game não encontrado' } });
     }
 
     if (existing.developerId !== userId) {
+      console.warn(`[Games] Falha ao atualizar jogo: Permissão negada (403). User ${userId} não é dono do jogo ${id}.`);
       return res.status(403).json({ error: { message: 'Você não tem permissão para editar este game' } });
     }
 
@@ -192,9 +206,10 @@ export async function updateGame(req: Request, res: Response) {
       })),
     };
 
+    console.log(`[Games] Jogo '${game.title}' (ID: ${id}) atualizado com sucesso.`);
     res.json(gameWithUrls);
   } catch (e: any) {
-    console.error('Error updating game:', e);
+    console.error(`[Games] Erro ao atualizar jogo (ID: ${id}):`, e.message);
     if (e?.code === 'P2025') {
       return res.status(404).json({ error: { message: 'Game não encontrado' } });
     }
@@ -203,29 +218,33 @@ export async function updateGame(req: Request, res: Response) {
 }
 
 export async function deleteGame(req: Request, res: Response) {
+  const id = String(req.params.id);
+  console.log(`[Games] Tentativa de deletar jogo ID: ${id}`);
   try {
-    const id = String(req.params.id);
     const userId = (req as any).user?.id;
 
     if (!userId) {
+      console.warn(`[Games] Falha ao deletar jogo: Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
-    // Buscar game com imagens
     const game = await prisma.game.findUnique({ 
       where: { id },
       include: { images: true }
     });
 
     if (!game) {
+      console.warn(`[Games] Falha ao deletar jogo: Jogo não encontrado (404). ID: ${id}`);
       return res.status(404).json({ error: { message: 'Game não encontrado' } });
     }
 
     if (game.developerId !== userId) {
+      console.warn(`[Games] Falha ao deletar jogo: Permissão negada (403). User ${userId} não é dono do jogo ${id}.`);
       return res.status(403).json({ error: { message: 'Você não tem permissão para deletar este game' } });
     }
 
     // Deletar arquivos do S3
+    console.log(`[Games] Deletando arquivos do S3 para o jogo ID: ${id}...`);
     const deletePromises = [];
     if (game.s3Key) {
       deletePromises.push(deleteFromS3(game.s3Key));
@@ -235,15 +254,16 @@ export async function deleteGame(req: Request, res: Response) {
     });
 
     await Promise.allSettled(deletePromises);
+    console.log(`[Games] Arquivos do S3 deletados.`);
 
     // Deletar do banco (cascade deleta imagens)
     await prisma.game.delete({ where: { id } });
 
     await logCrud('DELETE', { resource: 'game', id, userId });
-
+    console.log(`[Games] Jogo '${game.title}' (ID: ${id}) deletado com sucesso.`);
     res.status(204).send();
   } catch (e: any) {
-    console.error('Error deleting game:', e);
+    console.error(`[Games] Erro ao deletar jogo (ID: ${id}):`, e.message);
     if (e?.code === 'P2025') {
       return res.status(404).json({ error: { message: 'Game não encontrado' } });
     }
@@ -252,10 +272,12 @@ export async function deleteGame(req: Request, res: Response) {
 }
 
 export async function getMyGames(req: Request, res: Response) {
+  console.log(`[Games] Listando "Meus Jogos"...`);
   try {
     const userId = (req as any).user?.id;
 
     if (!userId) {
+      console.warn(`[Games] Falha ao listar "Meus Jogos": Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
@@ -282,9 +304,10 @@ export async function getMyGames(req: Request, res: Response) {
       })),
     }));
 
+    console.log(`[Games] "Meus Jogos" listados com sucesso. Total: ${items.length}`);
     res.json({ items: gamesWithUrls, page, pageSize, total });
   } catch (e: any) {
-    console.error('Error getting my games:', e);
+    console.error('[Games] Erro ao listar "Meus Jogos":', e.message);
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao listar seus games' } });
   }
 }
