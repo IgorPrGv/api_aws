@@ -5,6 +5,7 @@ import { gamesRouter } from './games.routes';
 import { reviewsRouter } from './reviews.routes';
 import { ratingsRouter } from './ratings.routes';
 import authRoutes from "./auth.routes";
+import { downloadsRouter } from './downloads.routes';
 
 export const routes = Router();
 
@@ -38,5 +39,7 @@ routes.use('/games', reviewsRouter);
 
 // Ratings (nested under /games/:id/like, etc)
 routes.use('/games', ratingsRouter);
+
+routes.use('/downloads', downloadsRouter);
 
 export default routes;

@@ -2,9 +2,165 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
+import { z, ZodError } from 'zod'; 
 import { logCrud } from '../services/logs.storage';
-import { getS3PublicUrl, deleteFromS3 } from '../services/storage.services';
-import { publishGameEvent } from '../services/events.service';
+import { logsService } from '../services/dynamodb.services';
+import { getS3PublicUrl, deleteFromS3, uploadBufferToS3 } from '../services/storage.services';
+import { publishNotification, sendToQueue } from '../services/events.service';
+
+
+// ===============================================
+// ADAPTADO: Lógica de 'createGame' (do server.ts)
+// ===============================================
+
+// Esquema de validação do Zod (copiado do seu snippet)
+const CreateGameFields = z.object({
+  title: z.string().min(1),
+  description: z.string().min(1),
+  genre: z.string().min(1),
+});
+
+export async function createGame(req: Request, res: Response) {
+  // A rota (games.routes.ts) já rodou o 'auth' e 'multer'.
+  // Então, req.user e req.files já existem aqui.
+  console.log('[Games] Tentativa de criar jogo (createGame)...');
+  try {
+    const { title, description, genre } = CreateGameFields.parse(req.body || {});
+    const images = (req.files as any)?.images as Express.Multer.File[] | undefined || [];
+    const file = ((req.files as any)?.file as Express.Multer.File[] | undefined)?.[0];
+    const userId = (req as any).user.id; // Vem do middleware 'auth'
+
+    // Upload images to S3
+    console.log(`[Games] Enviando ${images.length} imagens para o S3...`);
+    const imagesData = await Promise.all(
+      images.slice(0, 3).map(async (f, idx) => ({
+        // Usei 'uploadBufferToS3' (do seu service) em vez de 'uploadToS3' (do snippet)
+        s3Key: await uploadBufferToS3({ 
+          key: `game-images/${Date.now()}-${f.originalname}`, 
+          contentType: f.mimetype, 
+          body: f.buffer 
+        }).then(r => r.key),
+        orderIndex: idx,
+      }))
+    );
+
+    // Upload game file to S3
+    let s3Key: string | null = null;
+    if (file) {
+      console.log(`[Games] Enviando arquivo do jogo '${file.originalname}' para o S3...`);
+      s3Key = await uploadBufferToS3({
+        key: `game-files/${Date.now()}-${file.originalname}`,
+        contentType: file.mimetype,
+        body: file.buffer
+      }).then(r => r.key);
+    }
+
+    // Salvar no RDS (Prisma)
+    console.log(`[Games] Salvando jogo '${title}' no banco de dados (RDS)...`);
+    const game = await prisma.game.create({
+      data: {
+        title,
+        description,
+        genre,
+        developerId: userId,
+        likes: 0,
+        dislikes: 0,
+        ...(s3Key ? { s3Key } : {}),
+        ...(imagesData.length ? { images: { create: imagesData } } : {}),
+      },
+      include: { images: { orderBy: { orderIndex: 'asc' } } },
+    });
+
+    console.log(`[Games] Registando log (DynamoDB)...`);
+    await logsService.log('INFO', 'GAME_CREATED', { userId: userId, gameId: game.id });
+    
+    console.log(`[Games] Enviando evento para fila (SQS)...`);
+    await sendToQueue({
+      action: 'GAME_CREATED',
+      gameId: game.id,
+      title: game.title,
+    });
+
+    console.log(`[Games] Publicando evento (SNS)...`);
+    await publishNotification(
+      `Novo jogo publicado: ${game.title} por ${userId}`,
+      'Novo Jogo Publicado'
+    );
+
+    const gameWithUrls = {
+      ...game,
+      fileUrl: game.s3Key ? getS3PublicUrl(game.s3Key) : null,
+      images: game.images.map(img => ({
+        ...img,
+        url: getS3PublicUrl(img.s3Key),
+      })),
+    };
+
+    console.log(`[Games] Jogo '${game.title}' (ID: ${game.id}) criado com sucesso.`);
+    res.status(201).json(gameWithUrls);
+
+  } catch (err: any) {
+    if (err instanceof ZodError) {
+      console.error("[Games] ❌ Erro de Validação (Zod) em createGame:", err.issues);
+      return res.status(400).json({
+        error: { code: 'VALIDATION_ERROR', message: err.issues.map(i => i.message).join(', ') }
+      });
+    }
+    console.error('[Games] ❌ Erro ao criar jogo:', err.message);
+    await logsService.log('ERROR', 'CREATE_GAME_FAILED', { userId: (req as any).user?.id, error: err.message });
+    res.status(500).json({ error: { code: 'CREATE_GAME_FAILED', message: 'Falha ao criar game' } });
+  }
+}
+
+// ===============================================
+// ADAPTADO: Lógica de 'getMyGames' (do server.ts)
+// ===============================================
+export async function getMyGames(req: Request, res: Response) {
+  console.log(`[Games] Listando "Meus Jogos"...`);
+  try {
+    const userId = (req as any).user?.id; // Vem do middleware 'auth'
+    if (!userId) { // (O middleware 'auth' já deve ter barrado, mas é uma boa checagem)
+      console.warn(`[Games] ⚠️ Falha ao listar "Meus Jogos": Usuário não autenticado (401).`);
+      return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
+    }
+
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
+    const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.pageSize || '12'), 10)));
+
+    const [total, items] = await Promise.all([
+      prisma.game.count({ where: { developerId: userId } }),
+      prisma.game.findMany({
+        where: { developerId: userId },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { images: { orderBy: { orderIndex: 'asc' } } },
+      }),
+    ]);
+
+    const gamesWithUrls = items.map(g => ({
+      ...g,
+      fileUrl: g.s3Key ? getS3PublicUrl(g.s3Key) : null,
+      images: g.images.map(img => ({
+        ...img,
+        url: getS3PublicUrl(img.s3Key),
+      })),
+    }));
+
+    console.log(`[Games] "Meus Jogos" listados com sucesso. Total: ${items.length}`);
+    res.json({ items: gamesWithUrls, page, pageSize, total });
+  } catch (err: any) {
+    console.error('[Games] ❌ Erro ao listar "Meus Jogos":', err.message);
+    await logsService.log('ERROR', 'LIST_DEV_GAMES_FAILED', { userId: (req as any).user?.id, error: err.message });
+    res.status(500).json({ error: { code: 'LIST_DEV_GAMES_FAILED', message: 'Falha ao listar games do DEV' } });
+  }
+}
+
+
+// ===============================================
+// Funções restantes (listGames, getGameById, update, delete)
+// (A lógica que você já tinha neles está correta)
+// ===============================================
 
 export async function listGames(req: Request, res: Response) {
   console.log('[Games] Processando listagem de jogos (listGames)...');
@@ -91,84 +247,12 @@ export async function getGameById(req: Request, res: Response) {
   }
 }
 
-export async function createGame(req: Request, res: Response) {
-  console.log('[Games] Tentativa de criar jogo (createGame)...');
-  try {
-    const userId = (req as any).user?.id;
-    if (!userId) {
-      console.warn('[Games] Falha ao criar jogo: Usuário não autenticado (401).');
-      return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
-    }
-
-    const { title, description, genre, s3Key, imageKeys } = req.body;
-
-    if (!title || !description || !genre) {
-      console.warn(`[Games] Falha ao criar jogo: Campos obrigatórios em falta.`);
-      return res.status(400).json({ 
-        error: { message: 'title, description e genre são obrigatórios' } 
-      });
-    }
-
-    // Criar imagens se houver
-    const imagesData = imageKeys && Array.isArray(imageKeys)
-      ? imageKeys.map((key: string, idx: number) => ({
-          s3Key: key,
-          orderIndex: idx,
-        }))
-      : [];
-
-    console.log(`[Games] Salvando jogo '${title}' no banco de dados (RDS)...`);
-    const game = await prisma.game.create({
-      data: {
-        title,
-        description,
-        genre,
-        developerId: userId,
-        likes: 0,
-        dislikes: 0,
-        ...(s3Key ? { s3Key } : {}),
-        ...(imagesData.length ? { images: { create: imagesData } } : {}),
-      },
-      include: { 
-        images: { orderBy: { orderIndex: 'asc' } },
-        developer: { select: { username: true } }
-      },
-    });
-
-    console.log(`[Games] Registando log (DynamoDB)...`);
-    await logCrud('CREATE', { resource: 'game', id: game.id, userId });
-    
-    console.log(`[Games] Publicando evento (SNS)...`);
-    await publishGameEvent('GAME_CREATED', {
-      gameId: game.id,
-      title: game.title,
-      developerId: userId,
-    });
-
-    // Adicionar URLs
-    const gameWithUrls = {
-      ...game,
-      fileUrl: game.s3Key ? getS3PublicUrl(game.s3Key) : null,
-      images: game.images.map(img => ({
-        ...img,
-        url: getS3PublicUrl(img.s3Key),
-      })),
-    };
-
-    console.log(`[Games] Jogo '${game.title}' (ID: ${game.id}) criado com sucesso.`);
-    res.status(201).json(gameWithUrls);
-  } catch (e: any) {
-    console.error('[Games] Erro ao criar jogo:', e.message);
-    res.status(500).json({ error: { message: e?.message ?? 'Erro ao criar game' } });
-  }
-}
-
 export async function updateGame(req: Request, res: Response) {
   const id = String(req.params.id);
   console.log(`[Games] Tentativa de atualizar jogo ID: ${id}`);
   try {
     const userId = (req as any).user?.id;
-    const { title, description, genre } = req.body;
+    const { title, description, genre } = req.body; // Update só lida com JSON simples
 
     if (!userId) {
       console.warn(`[Games] Falha ao atualizar jogo: Usuário não autenticado (401).`);
@@ -195,7 +279,7 @@ export async function updateGame(req: Request, res: Response) {
       }
     });
 
-    await logCrud('UPDATE', { resource: 'game', id, userId });
+    await logsService.log('INFO', 'GAME_UPDATED', { gameId: id, userId }); // Usei logsService
 
     const gameWithUrls = {
       ...game,
@@ -259,7 +343,7 @@ export async function deleteGame(req: Request, res: Response) {
     // Deletar do banco (cascade deleta imagens)
     await prisma.game.delete({ where: { id } });
 
-    await logCrud('DELETE', { resource: 'game', id, userId });
+    await logsService.log('INFO', 'GAME_DELETED', { gameId: id, userId }); // Usei logsService
     console.log(`[Games] Jogo '${game.title}' (ID: ${id}) deletado com sucesso.`);
     res.status(204).send();
   } catch (e: any) {
@@ -268,46 +352,5 @@ export async function deleteGame(req: Request, res: Response) {
       return res.status(404).json({ error: { message: 'Game não encontrado' } });
     }
     res.status(500).json({ error: { message: e?.message ?? 'Erro ao excluir game' } });
-  }
-}
-
-export async function getMyGames(req: Request, res: Response) {
-  console.log(`[Games] Listando "Meus Jogos"...`);
-  try {
-    const userId = (req as any).user?.id;
-
-    if (!userId) {
-      console.warn(`[Games] Falha ao listar "Meus Jogos": Usuário não autenticado (401).`);
-      return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
-    }
-
-    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10));
-    const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.pageSize || '12'), 10)));
-
-    const [total, items] = await Promise.all([
-      prisma.game.count({ where: { developerId: userId } }),
-      prisma.game.findMany({
-        where: { developerId: userId },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: { images: { orderBy: { orderIndex: 'asc' } } },
-      }),
-    ]);
-
-    const gamesWithUrls = items.map(g => ({
-      ...g,
-      fileUrl: g.s3Key ? getS3PublicUrl(g.s3Key) : null,
-      images: g.images.map(img => ({
-        ...img,
-        url: getS3PublicUrl(img.s3Key),
-      })),
-    }));
-
-    console.log(`[Games] "Meus Jogos" listados com sucesso. Total: ${items.length}`);
-    res.json({ items: gamesWithUrls, page, pageSize, total });
-  } catch (e: any) {
-    console.error('[Games] Erro ao listar "Meus Jogos":', e.message);
-    res.status(500).json({ error: { message: e?.message ?? 'Erro ao listar seus games' } });
   }
 }

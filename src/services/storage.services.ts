@@ -1,12 +1,10 @@
 // src/services/storage.service.ts
 import { s3, s3Bucket } from '../config/aws';
-// 👇 1. Importar os 'Commands' do SDK v3
 import {
   PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
-// 👇 2. Importar o 'getSignedUrl' do pacote presigner (VEJA O PASSO 2)
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 type UploadParams = {
@@ -16,6 +14,12 @@ type UploadParams = {
 };
 
 export async function uploadBufferToS3({ key, contentType, body }: UploadParams) {
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[S3_BYPASS] Upload simulado para a chave: ${key}`);
+    return { key, location: `s3://${s3Bucket}/${key}` };
+  }
+
   await s3.send(
     new PutObjectCommand({
       Bucket: s3Bucket,
@@ -29,6 +33,12 @@ export async function uploadBufferToS3({ key, contentType, body }: UploadParams)
 }
 
 export async function deleteFromS3(key: string): Promise<void> {
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[S3_BYPASS] Delete simulado da chave: ${key}`);
+    return;
+  }
+  
   await s3.send(
     new DeleteObjectCommand({
       Bucket: s3Bucket,
@@ -64,7 +74,7 @@ export async function uploadMultipleToS3(
     const ext = file.originalname.includes('.')
       ? file.originalname.split('.').pop()
       : 'bin';
-      
+
     const key = `${folder}/${Date.now()}-${Math.random()
       .toString(36)
       .substr(2, 9)}.${ext}`;

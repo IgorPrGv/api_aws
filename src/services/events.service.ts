@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/services/events.service.ts
-import { sns, snsTopic } from '../config/aws';
+import { sns, snsTopic, sqs, sqsQueueUrl } from '../config/aws';
 import { PublishCommand } from '@aws-sdk/client-sns';
+import { SendMessageCommand } from '@aws-sdk/client-sqs';
 
 export async function publishUploadEvent(fileName: string, s3Key: string) {
   if (process.env.NODE_ENV !== 'production') {
@@ -65,7 +66,7 @@ export async function publishGameEvent(eventType: string, data: any) {
   }
 }
 
-export async function publishNotification(subject: string, message: string) {
+export async function publishNotification(message: string, subject: string) {
 
   if (process.env.NODE_ENV !== 'production') {
     console.log(`[SNS_BYPASS] Notificação: ${subject}`);
@@ -87,5 +88,26 @@ export async function publishNotification(subject: string, message: string) {
     );
   } catch (error) {
     console.error('Error publishing notification:', error);
+  }
+}
+
+export async function sendToQueue(messageBody: any): Promise<void> {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[SQS_BYPASS] Envio simulado para fila:`, messageBody);
+    return;
+  }
+
+  if (!sqsQueueUrl) {
+    console.warn('SQS Queue URL not configured, skipping queue send');
+    return;
+  }
+  
+  try {
+    await sqs.send(new SendMessageCommand({
+      QueueUrl: sqsQueueUrl,
+      MessageBody: JSON.stringify(messageBody),
+    }));
+  } catch (error) {
+    console.error('Error sending message to SQS:', error);
   }
 }

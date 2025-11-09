@@ -24,13 +24,10 @@ interface SQSMessage {
   };
 }
 
-// 👇 2. Trocar o tipo de 'AWS.SQS.Message' para 'Message'
 async function processMessage(message: Message): Promise<void> {
   try {
-    // Parse message body (a v3 ainda usa 'message.Body')
     const body = JSON.parse(message.Body || '{}');
 
-    // Se vier do SNS, precisa fazer outro parse
     const payload: SQSMessage = body.Message ? JSON.parse(body.Message) : body;
 
     console.log('Processing message:', payload.eventType);

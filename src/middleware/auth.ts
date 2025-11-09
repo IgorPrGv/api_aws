@@ -11,12 +11,16 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
+type AuthOptions = {
+  roles?: ('PLAYER' | 'DEV')[];
+};
+
 export interface JWTPayload {
   id: string;
   userType: 'PLAYER' | 'DEV';
 }
 
-export function auth() {
+export function auth(opts?: AuthOptions) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const authHeader = String(req.headers.authorization || '');
@@ -32,6 +36,16 @@ export function auth() {
       }
 
       const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+
+      if (opts?.roles && !opts.roles.includes(decoded.userType)) {
+        return res.status(403).json({
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Acesso negado. Você não tem permissão para esta ação.'
+          }
+        });
+      }
+
       (req as any).user = decoded;
       next();
     } catch (error) {
