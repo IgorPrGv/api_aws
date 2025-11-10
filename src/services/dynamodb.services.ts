@@ -273,14 +273,17 @@ export class ReviewsService {
 
 // ===================== LOGS SERVICE =====================
 export class LogsService {
+  /**
+   * @param action O tipo de ação 
+   * @param element Os dados manipulados 
+   */
   async log(
-    level: 'INFO' | 'WARN' | 'ERROR',
     action: string,
-    metadata?: Record<string, unknown>,
+    element?: unknown, 
   ): Promise<void> {
     
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`[LOG_BYPASS] Ação: ${action}`, metadata || '');
+      console.log(`[LOG_BYPASS] Ação: ${action}`, element || '');
       return; 
     }
 
@@ -289,12 +292,10 @@ export class LogsService {
     const logTable = process.env.DDB_TABLE_CRUD || 'crud_logs';
 
     const log = {
-      operation_id: logId,
+      operation_id: logId, 
       action,
+      element: element || null,
       timestamp: now.toISOString(),
-      level,
-      TTL: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60, // 30 dias
-      ...(metadata || {}),
     };
 
     try {

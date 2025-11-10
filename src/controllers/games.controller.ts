@@ -3,7 +3,6 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { z, ZodError } from 'zod'; 
-import { logCrud } from '../services/logs.storage';
 import { logsService } from '../services/dynamodb.services';
 import { publishGameEvent } from '../services/events.service';
 import { getS3PublicUrl, deleteFromS3, uploadBufferToS3 } from '../services/storage.services';
@@ -62,7 +61,7 @@ export async function createGame(req: Request, res: Response) {
     });
 
     console.log(`[Games] Registando log (DynamoDB)...`);
-    await logsService.log('INFO', 'GAME_CREATED', { userId: userId, gameId: game.id });
+    await logsService.log('GAME_CREATED', { userId: userId, gameId: game.id });
     
     console.log(`[Games] Enviando evento para fila (SQS)...`);
     await sendToQueue({
@@ -91,13 +90,12 @@ export async function createGame(req: Request, res: Response) {
 
   } catch (err: any) {
     if (err instanceof ZodError) {
-      console.error("[Games] ❌ Erro de Validação (Zod) em createGame:", err.issues);
+      console.error("[Games] Erro de Validação (Zod) em createGame:", err.issues);
       return res.status(400).json({
         error: { code: 'VALIDATION_ERROR', message: err.issues.map(i => i.message).join(', ') }
       });
     }
-    console.error('[Games] ❌ Erro ao criar jogo:', err.message);
-    await logsService.log('ERROR', 'CREATE_GAME_FAILED', { userId: (req as any).user?.id, error: err.message });
+    console.error('[Games] Erro ao criar jogo:', err.message);
     res.status(500).json({ error: { code: 'CREATE_GAME_FAILED', message: 'Falha ao criar game' } });
   }
 }
@@ -141,7 +139,6 @@ export async function getMyGames(req: Request, res: Response) {
     res.json({ items: gamesWithUrls, page, pageSize, total });
   } catch (err: any) {
     console.error('[Games] ❌ Erro ao listar "Meus Jogos":', err.message);
-    await logsService.log('ERROR', 'LIST_DEV_GAMES_FAILED', { userId: (req as any).user?.id, error: err.message });
     res.status(500).json({ error: { code: 'LIST_DEV_GAMES_FAILED', message: 'Falha ao listar games do DEV' } });
   }
 }
@@ -186,7 +183,7 @@ export async function listGames(req: Request, res: Response) {
       })),
     }));
 
-    await logCrud('READ', { resource: 'game', count: items.length, page });
+    await logsService.log('LIST_GAMES', { search, page, count: items.length });
     console.log(`[Games] Jogos listados com sucesso. Total: ${items.length}`);
     res.json({ items: gamesWithUrls, page, pageSize, total });
   } catch (e: any) {
@@ -222,7 +219,7 @@ export async function getGameById(req: Request, res: Response) {
       })),
     };
 
-    await logCrud('READ', { resource: 'game', id });
+    await logsService.log('GET_GAME', { gameId: id });
     console.log(`[Games] Jogo '${game.title}' (ID: ${id}) encontrado.`);
     res.json(gameWithUrls);
   } catch (e: any) {
@@ -263,7 +260,7 @@ export async function updateGame(req: Request, res: Response) {
       }
     });
 
-    await logsService.log('INFO', 'GAME_UPDATED', { gameId: id, userId });
+    await logsService.log('GAME_UPDATED', { gameId: id, userId });
 
     const gameWithUrls = {
       ...game,
@@ -327,8 +324,7 @@ export async function deleteGame(req: Request, res: Response) {
     // Deletar do banco (cascade deleta imagens)
     await prisma.game.delete({ where: { id } });
 
-    await logsService.log('INFO', 'GAME_DELETED', { gameId: id, userId }); 
-
+    await logsService.log('GAME_DELETED', { gameId: id, userId });
     await publishGameEvent('GAME_DELETED', { gameId: id, developerId: userId });
 
     console.log(`[Games] Jogo '${game.title}' (ID: ${id}) deletado com sucesso.`);

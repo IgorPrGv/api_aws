@@ -54,6 +54,7 @@ export async function registerUser(req: Request, res: Response) {
 
     const token = signToken({ id: user.id, userType: user.userType });
 
+    await logsService.log('USER_REGISTERED', { userId: user.id });
     console.log(`[Auth] Usuário '${user.username}' (ID: ${user.id}) criado com sucesso.`);
     return res.status(201).json({ user, token });
   } catch (err) {
@@ -103,8 +104,10 @@ export async function loginUser(req: Request, res: Response) {
 
     const token = signToken({ id: u.id, userType: u.userType });
 
+    await logsService.log('USER_LOGIN', { userId: u.id });
     console.log(`[Auth] Usuário '${user.username}' logado com sucesso.`);
     return res.json({ user, token });
+
   } catch (err) {
     if (err instanceof ZodError) {
       console.error("[Auth]  Erro de Validação (Zod) em /login:", err.issues);
@@ -131,9 +134,9 @@ export async function deleteAccount(req: any, res: Response) {
       where: { id: userId },
     });
 
-    await logsService.log('INFO', 'USER_DELETED', { userId });
-
+    await logsService.log('USER_DELETED', { userId });
     console.log(`[Auth] Usuário ${userId} excluído com sucesso.`);
+    
     res.status(204).send(); 
   } catch (err: any) {
     console.error(`[Auth] Erro Fatal em /auth/me (ID: ${userId}):`, err.message);

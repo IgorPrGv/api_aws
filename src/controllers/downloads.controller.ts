@@ -5,7 +5,6 @@ import { z, ZodError } from 'zod';
 import { logsService } from '../services/dynamodb.services';
 import { getS3PublicUrl } from '../services/storage.services';
 
-// Esquema de validação (copiado do monolito)
 const AddDownloadSchema = z.object({ gameId: z.string().min(1) });
 
 export async function addDownload(req: Request, res: Response) {
@@ -33,7 +32,7 @@ export async function addDownload(req: Request, res: Response) {
       select: { id: true, gameId: true, userId: true, downloadDate: true },
     });
     
-    await logsService.log('INFO', 'GAME_ADDED_TO_LIBRARY', { userId: userId, gameId });
+    await logsService.log('GAME_ADDED_TO_LIBRARY', { userId: userId, gameId });
     console.log(`[Downloads] Jogo ${gameId} adicionado à biblioteca do usuário ${userId}.`);
     res.status(201).json(dl);
 
@@ -45,7 +44,6 @@ export async function addDownload(req: Request, res: Response) {
       });
     }
     console.error(`[Downloads] Erro ao adicionar jogo à biblioteca:`, err.message);
-    await logsService.log('ERROR', 'ADD_DOWNLOAD_FAILED', { userId, error: err.message });
     res.status(500).json({ error: { code: 'ADD_DOWNLOAD_FAILED', message: 'Falha ao salvar na biblioteca' } });
   }
 }
@@ -98,14 +96,13 @@ export async function getDownloads(req: Request, res: Response) {
 
   } catch (err: any) {
     console.error(`[Downloads] Erro ao listar biblioteca:`, err.message);
-    await logsService.log('ERROR', 'LIST_DOWNLOADS_FAILED', { userId, error: err.message });
     res.status(500).json({ error: { code: 'LIST_DOWNLOADS_FAILED', message: 'Falha ao listar biblioteca' } });
   }
 }
 
 export async function deleteDownload(req: Request, res: Response) {
   const userId = (req as any).user?.id;
-  const id = String(req.params.id); // ID do *download*, não do jogo
+  const id = String(req.params.id); 
   console.log(`[Downloads] Usuário ${userId} tentando deletar download ID: ${id}...`);
   try {
     if (!userId) {
@@ -113,16 +110,14 @@ export async function deleteDownload(req: Request, res: Response) {
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
-    // O deleteMany garante que o usuário só possa deletar o *seu* download
     await prisma.download.deleteMany({ where: { id, userId: userId } });
     
-    await logsService.log('INFO', 'GAME_REMOVED_FROM_LIBRARY', { userId: userId, downloadId: id });
+    await logsService.log('GAME_REMOVED_FROM_LIBRARY', { userId: userId, downloadId: id });
     console.log(`[Downloads] Download ID: ${id} deletado com sucesso.`);
     res.status(204).send();
 
   } catch (err: any) {
     console.error(`[Downloads] Erro ao deletar download ID: ${id}:`, err.message);
-    await logsService.log('ERROR', 'DELETE_DOWNLOAD_FAILED', { userId, downloadId: req.params.id, error: err.message });
     res.status(500).json({ error: { code: 'DELETE_DOWNLOAD_FAILED', message: 'Falha ao remover da biblioteca' } });
   }
 }

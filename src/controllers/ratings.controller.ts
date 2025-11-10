@@ -3,7 +3,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { ratingsService, RatingType } from '../services/dynamodb.services';
-import { logCrud } from '../services/logs.storage';
+import { logsService } from '../services/dynamodb.services';
 
 export async function likeGame(req: Request, res: Response) {
   const gameId = String(req.params.id);
@@ -47,7 +47,7 @@ export async function likeGame(req: Request, res: Response) {
       select: { likes: true, dislikes: true } 
     });
 
-    await logCrud('UPDATE', { resource: 'rating', action: 'LIKE', userId, gameId });
+    await logsService.log('GAME_LIKED', { userId, gameId });
     console.log(`[Ratings] LIKE no jogo ${gameId} registrado com sucesso.`);
     res.json({ 
       likes: game?.likes ?? 0, 
@@ -98,7 +98,7 @@ export async function dislikeGame(req: Request, res: Response) {
       select: { likes: true, dislikes: true } 
     });
 
-    await logCrud('UPDATE', { resource: 'rating', action: 'DISLIKE', userId, gameId });
+    await logsService.log('GAME_DISLIKED', { userId, gameId });
     console.log(`[Ratings] DISLIKE no jogo ${gameId} registrado com sucesso.`);
     res.json({ 
       likes: game?.likes ?? 0, 
@@ -149,7 +149,7 @@ export async function removeRating(req: Request, res: Response) {
       select: { likes: true, dislikes: true } 
     });
 
-    await logCrud('DELETE', { resource: 'rating', userId, gameId });
+    await logsService.log('RATING_REMOVED', { userId, gameId });
     console.log(`[Ratings] Rating do jogo ${gameId} removido com sucesso.`);
     res.json({ 
       likes: game?.likes ?? 0, 

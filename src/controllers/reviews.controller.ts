@@ -2,8 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
-import { reviewsService } from '../services/dynamodb.services';
-import { logCrud } from '../services/logs.storage';
+import { reviewsService, logsService } from '../services/dynamodb.services';
 
 export async function listReviewsByGame(req: Request, res: Response) {
   const gameId = String(req.params.id);
@@ -16,11 +15,7 @@ export async function listReviewsByGame(req: Request, res: Response) {
     console.log(`[Reviews] Buscando reviews no DynamoDB...`);
     const result = await reviewsService.getGameReviews(gameId, limit, lastKey);
 
-    await logCrud('READ', { 
-      resource: 'review', 
-      gameId, 
-      count: result.items.length 
-    });
+    await logsService.log('LIST_REVIEWS', { gameId, count: result.items.length });
 
     console.log(`[Reviews] ${result.items.length} reviews encontradas para o jogo ${gameId}.`);
     res.json({ 
@@ -85,12 +80,7 @@ export async function createReview(req: Request, res: Response) {
       comment.trim()
     );
 
-    await logCrud('CREATE', { 
-      resource: 'review', 
-      id: review.reviewId, 
-      gameId, 
-      userId 
-    });
+    await logsService.log('REVIEW_CREATED', { id: review.reviewId, gameId, userId });
 
     console.log(`[Reviews] Review (ID: ${review.reviewId}) criado com sucesso para o jogo ${gameId}.`);
     res.status(201).json({

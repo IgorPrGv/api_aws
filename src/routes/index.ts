@@ -10,17 +10,17 @@ import { downloadsRouter } from './downloads.routes';
 export const routes = Router();
 
 routes.use((req: Request, res: Response, next: NextFunction) => {
-  console.log(`[API] ➡️ Requisição Recebida: ${req.method} ${req.originalUrl}`);
+  console.log(`[API] Requisição Recebida: ${req.method} ${req.originalUrl}`);
   next(); 
 });
 
 // Health check
 routes.get('/health', (_req, res) => {
-  console.log('[API] 🩺 Verificação /health solicitada.');
+  console.log('[API] Verificação /health solicitada.');
   res.json({ 
     ok: true,
     timestamp: new Date().toISOString(),
-    service: 'GameWebsite API',
+    service: 'Steam da UFC API',
     version: '1.0.0'
   });
 });

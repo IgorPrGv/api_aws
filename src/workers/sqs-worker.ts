@@ -90,10 +90,8 @@ async function handleFileUploaded(payload: SQSMessage): Promise<void> {
     );
     if (!s3Object.Body) throw new Error('S3 object body is empty');
     
-    // Buffer
     const buffer = Buffer.from(await s3Object.Body.transformToByteArray());
 
-    // Chamar processor
     console.log(`[Worker] Redimensionando...`);
     const resizedKey = await resizeAndSaveImage(s3Key, buffer, '_resized');
 

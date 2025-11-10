@@ -45,7 +45,7 @@ export const ddbTableRatings = process.env.DDB_TABLE_RATINGS || 'GameRatings';
 export const ddbTableReviews = process.env.DDB_TABLE_REVIEWS || 'GameReviews';
 
 if (!ddbTable) {
-  console.warn('⚠️  DDB_TABLE_CRUD não configurado');
+  console.warn(' [AWS] DDB_TABLE_CRUD não configurado');
 }
 
 // ===================== SNS =====================
@@ -53,7 +53,7 @@ export const sns = new SNSClient(clientConfig);
 export const snsTopic = process.env.SNS_TOPIC_ARN || '';
 
 if (!snsTopic) {
-  console.warn('⚠️  SNS_TOPIC_ARN não configurado');
+  console.warn('[AWS] SNS_TOPIC_ARN não configurado');
 }
 
 // ===================== SQS =====================
@@ -65,7 +65,7 @@ if (!sqsQueueUrl) {
 }
 
 // Log de inicialização
-console.log('✅ AWS Services configurados (v3):', {
+console.log('[AWS] Services configurados (v3):', {
   region: region,
   s3Bucket,
   ddbTable,

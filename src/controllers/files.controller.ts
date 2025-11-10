@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { uploadBufferToS3, uploadMultipleToS3, getS3PublicUrl } from '../services/storage.services';
 import { publishUploadEvent } from '../services/events.service';
-import { logCrud } from '../services/logs.storage';
+import { logsService } from '../services/dynamodb.services';
 
 export async function uploadFile(req: Request, res: Response) {
   console.log('[Files] Tentativa de upload de arquivo único (uploadFile)...');
@@ -30,7 +30,7 @@ export async function uploadFile(req: Request, res: Response) {
     await publishUploadEvent(fileName, key);
 
     console.log(`[Files] Registando log (DynamoDB) para: ${key}`);
-    await logCrud('UPLOAD', { fileName, key, size: file.size });
+    await logsService.log('FILE_UPLOADED', { key, fileName, size: file.size });
 
     console.log(`[Files] Upload de '${fileName}' (ID: ${key}) concluído.`);
     return res.json({ 
@@ -60,17 +60,10 @@ export async function uploadMultipleFiles(req: Request, res: Response) {
     console.log(`[Files] Enviando ${files.length} arquivos para a pasta '${folder}' no S3...`);
     const keys = await uploadMultipleToS3(files, folder);
 
-    await logCrud('UPLOAD', { 
-      count: files.length, 
-      folder,
-      keys 
-    });
-
+    await logsService.log('FILES_UPLOADED', { count: files.length, folder });
     console.log(`[Files] ${files.length} arquivos enviados com sucesso para '${folder}'.`);
-    return res.json({ 
-      ok: true, 
-      keys,
-      urls: keys.map(k => getS3PublicUrl(k))
+
+    return res.json({ ok: true, keys, urls: keys.map(k => getS3PublicUrl(k))
     });
   } catch (err: any) {
     console.error('[Files] Erro fatal no upload múltiplo:', err.message);
@@ -124,12 +117,7 @@ export async function uploadGameFiles(req: Request, res: Response) {
       }
     }
 
-    await logCrud('UPLOAD', { 
-      type: 'game_files',
-      imageCount: images?.length || 0,
-      hasGameFile: !!gameFile
-    });
-
+    await logsService.log('GAME_FILES_UPLOADED', { imageCount: images?.length || 0, hasGameFile: !!gameFile });
     console.log(`[Files] Upload dos arquivos do jogo concluído.`);
     return res.json(result);
   } catch (err: any) {
