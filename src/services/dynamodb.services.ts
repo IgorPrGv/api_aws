@@ -241,7 +241,6 @@ export class ReviewsService {
   }
 
   async deleteAllReviewsForGame(gameId: string): Promise<number> {
-    // 1. Encontrar todos os reviews para este jogo (usando a PK)
     const { items } = await this.getGameReviews(gameId, 1000); 
 
     if (items.length === 0) return 0;
@@ -249,8 +248,8 @@ export class ReviewsService {
     const deleteRequests = items.map(r => ({
       DeleteRequest: {
         Key: {
-          PK: r.PK, // (Ex: GAME#456)
-          SK: r.SK, // (Ex: REVIEW#12345)
+          PK: r.PK, 
+          SK: r.SK, 
         },
       },
     }));
