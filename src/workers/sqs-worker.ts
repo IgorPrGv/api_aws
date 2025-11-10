@@ -3,7 +3,7 @@
 // src/workers/sqs-worker.ts
 import 'dotenv/config';
 import { sqs, s3, ddb, sqsQueueUrl, s3Bucket, ddbTable } from '../config/aws';
-
+import { ratingsService, reviewsService } from '../services/dynamodb.services';
 import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
@@ -30,7 +30,7 @@ async function processMessage(message: Message): Promise<void> {
     const body = JSON.parse(message.Body || '{}');
     const payload: SQSMessage = body.Message ? JSON.parse(body.Message) : body;
 
-    console.log('[Worker] 🔄 Processando mensagem:', payload.eventType);
+    console.log('[Worker] Processando mensagem:', payload.eventType);
 
     switch (payload.eventType) {
       case 'FILE_UPLOADED':
@@ -42,7 +42,7 @@ async function processMessage(message: Message): Promise<void> {
         break;
 
       default:
-        console.log('[Worker] ⚠️ Tipo de evento desconhecido:', payload.eventType);
+        console.log('[Worker] Tipo de evento desconhecido:', payload.eventType);
     }
 
     await ddb.send(
@@ -61,7 +61,7 @@ async function processMessage(message: Message): Promise<void> {
       }),
     );
   } catch (error) {
-    console.error('[Worker] ❌ Erro ao processar mensagem:', error);
+    console.error('[Worker] Erro ao processar mensagem:', error);
     throw error; 
   }
 }
@@ -69,7 +69,7 @@ async function processMessage(message: Message): Promise<void> {
 async function handleFileUploaded(payload: SQSMessage): Promise<void> {
   const { s3Key, fileName } = payload;
   if (!s3Key) {
-    console.error('[Worker] ❌ Mensagem FILE_UPLOADED sem s3Key.');
+    console.error('[Worker] Mensagem FILE_UPLOADED sem s3Key.');
     return;
   }
   
@@ -100,7 +100,7 @@ async function handleFileUploaded(payload: SQSMessage): Promise<void> {
     // 3. (Opcional) Deletar o arquivo original
     // await s3.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: s3Key }));
 
-    console.log(`[Worker] ✅ Imagem redimensionada salva como: ${resizedKey}`);
+    console.log(`[Worker] Imagem redimensionada salva como: ${resizedKey}`);
 
   } catch (error: any) {
     console.error(`[Worker] Erro ao processar arquivo ${s3Key}:`, error.message);
@@ -111,6 +111,27 @@ async function handleFileUploaded(payload: SQSMessage): Promise<void> {
 async function handleGameCreated(payload: SQSMessage): Promise<void> {
   const { data } = payload;
   console.log(`[Worker] Novo jogo criado (apenas notificação): ${data?.gameId} - ${data?.title}`);
+}
+
+async function handleGameDeleted(payload: SQSMessage): Promise<void> {
+  const gameId = payload.data?.gameId;
+  if (!gameId) {
+    console.error('[Worker] Mensagem GAME_DELETED sem gameId.');
+    return;
+  }
+
+  console.log(`[Worker] Limpando dados do DynamoDB para o Jogo ID: ${gameId}...`);
+  
+  try {
+    const [ratingsCount, reviewsCount] = await Promise.all([
+      ratingsService.deleteAllRatingsForGame(gameId),
+      reviewsService.deleteAllReviewsForGame(gameId),
+    ]);
+    console.log(`[Worker] Limpeza concluída. ${ratingsCount} ratings e ${reviewsCount} reviews apagados.`);
+  } catch (error: any) {
+    console.error(`[Worker] Erro ao limpar dados do DynamoDB para o jogo ${gameId}:`, error.message);
+    throw error; 
+  }
 }
 
 async function processMessages(): Promise<void> {
@@ -132,7 +153,7 @@ async function processMessages(): Promise<void> {
     if (!data.Messages || data.Messages.length === 0) {
       return;
     }
-    console.log(`[Worker] 📥 Recebidas ${data.Messages.length} mensagens`);
+    console.log(`[Worker] Recebidas ${data.Messages.length} mensagens`);
 
     for (const message of data.Messages) {
       try {

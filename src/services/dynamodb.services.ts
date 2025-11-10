@@ -6,7 +6,7 @@ import {
   PutCommand,
   GetCommand,
   DeleteCommand,
-  QueryCommand,
+  QueryCommand, BatchWriteCommand
 } from '@aws-sdk/lib-dynamodb';
 
 // ===================== TYPES =====================
@@ -116,6 +116,39 @@ export class RatingsService {
     const dislikes = ratings.filter(r => r.type === RatingType.DISLIKE).length;
     return { likes, dislikes };
   }
+
+  async deleteAllRatingsForGame(gameId: string): Promise<number> {
+    // 1. Encontrar todos os ratings para este jogo usando o GSI1
+    const ratings = await this.getGameRatings(gameId);
+    
+    if (ratings.length === 0) return 0;
+
+    // 2. Criar um lote de 'DeleteRequest'
+    const deleteRequests = ratings.map(r => ({
+      DeleteRequest: {
+        Key: {
+          PK: r.PK, // (Ex: USER#123)
+          SK: r.SK, // (Ex: GAME#456)
+        },
+      },
+    }));
+
+    // 3. Enviar em lotes de 25 (limite do DynamoDB)
+    let deletedCount = 0;
+    for (let i = 0; i < deleteRequests.length; i += 25) {
+      const batch = deleteRequests.slice(i, i + 25);
+      await ddb.send(
+        new BatchWriteCommand({ 
+          RequestItems: {
+            [RATINGS_TABLE]: batch,
+          },
+        }),
+      );
+      deletedCount += batch.length;
+    }
+    
+    return deletedCount;
+  }
 }
 
 // ===================== REVIEWS SERVICE =====================
@@ -205,6 +238,37 @@ export class ReviewsService {
         },
       }),
     );
+  }
+
+  async deleteAllReviewsForGame(gameId: string): Promise<number> {
+    // 1. Encontrar todos os reviews para este jogo (usando a PK)
+    const { items } = await this.getGameReviews(gameId, 1000); 
+
+    if (items.length === 0) return 0;
+
+    const deleteRequests = items.map(r => ({
+      DeleteRequest: {
+        Key: {
+          PK: r.PK, // (Ex: GAME#456)
+          SK: r.SK, // (Ex: REVIEW#12345)
+        },
+      },
+    }));
+    
+    let deletedCount = 0;
+    for (let i = 0; i < deleteRequests.length; i += 25) {
+      const batch = deleteRequests.slice(i, i + 25);
+      await ddb.send(
+        new BatchWriteCommand({ 
+          RequestItems: {
+            [REVIEWS_TABLE]: batch,
+          },
+        }),
+      );
+      deletedCount += batch.length;
+    }
+    
+    return deletedCount;
   }
 }
 

@@ -5,15 +5,10 @@ import { prisma } from '../config/prisma';
 import { z, ZodError } from 'zod'; 
 import { logCrud } from '../services/logs.storage';
 import { logsService } from '../services/dynamodb.services';
+import { publishGameEvent } from '../services/events.service';
 import { getS3PublicUrl, deleteFromS3, uploadBufferToS3 } from '../services/storage.services';
-import { publishNotification, sendToQueue } from '../services/events.service';
+import { sendToQueue } from '../services/events.service';
 
-
-// ===============================================
-// ADAPTADO: Lógica de 'createGame' (do server.ts)
-// ===============================================
-
-// Esquema de validação do Zod (copiado do seu snippet)
 const CreateGameFields = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
@@ -21,20 +16,16 @@ const CreateGameFields = z.object({
 });
 
 export async function createGame(req: Request, res: Response) {
-  // A rota (games.routes.ts) já rodou o 'auth' e 'multer'.
-  // Então, req.user e req.files já existem aqui.
   console.log('[Games] Tentativa de criar jogo (createGame)...');
   try {
     const { title, description, genre } = CreateGameFields.parse(req.body || {});
     const images = (req.files as any)?.images as Express.Multer.File[] | undefined || [];
     const file = ((req.files as any)?.file as Express.Multer.File[] | undefined)?.[0];
-    const userId = (req as any).user.id; // Vem do middleware 'auth'
+    const userId = (req as any).user.id; 
 
-    // Upload images to S3
     console.log(`[Games] Enviando ${images.length} imagens para o S3...`);
     const imagesData = await Promise.all(
       images.slice(0, 3).map(async (f, idx) => ({
-        // Usei 'uploadBufferToS3' (do seu service) em vez de 'uploadToS3' (do snippet)
         s3Key: await uploadBufferToS3({ 
           key: `game-images/${Date.now()}-${f.originalname}`, 
           contentType: f.mimetype, 
@@ -44,7 +35,6 @@ export async function createGame(req: Request, res: Response) {
       }))
     );
 
-    // Upload game file to S3
     let s3Key: string | null = null;
     if (file) {
       console.log(`[Games] Enviando arquivo do jogo '${file.originalname}' para o S3...`);
@@ -81,11 +71,11 @@ export async function createGame(req: Request, res: Response) {
       title: game.title,
     });
 
-    console.log(`[Games] Publicando evento (SNS)...`);
-    await publishNotification(
-      `Novo jogo publicado: ${game.title} por ${userId}`,
-      'Novo Jogo Publicado'
-    );
+    // console.log(`[Games] Publicando evento (SNS)...`);
+    // await publishNotification(
+    //   `Novo jogo publicado: ${game.title} por ${userId}`,
+    //   'Novo Jogo Publicado'
+    // );
 
     const gameWithUrls = {
       ...game,
@@ -113,14 +103,14 @@ export async function createGame(req: Request, res: Response) {
 }
 
 // ===============================================
-// ADAPTADO: Lógica de 'getMyGames' (do server.ts)
+// getMyGames
 // ===============================================
 export async function getMyGames(req: Request, res: Response) {
   console.log(`[Games] Listando "Meus Jogos"...`);
   try {
-    const userId = (req as any).user?.id; // Vem do middleware 'auth'
-    if (!userId) { // (O middleware 'auth' já deve ter barrado, mas é uma boa checagem)
-      console.warn(`[Games] ⚠️ Falha ao listar "Meus Jogos": Usuário não autenticado (401).`);
+    const userId = (req as any).user?.id; 
+    if (!userId) {
+      console.warn(`[Games] Falha ao listar "Meus Jogos": Usuário não autenticado (401).`);
       return res.status(401).json({ error: { message: 'Usuário não autenticado' } });
     }
 
@@ -155,12 +145,6 @@ export async function getMyGames(req: Request, res: Response) {
     res.status(500).json({ error: { code: 'LIST_DEV_GAMES_FAILED', message: 'Falha ao listar games do DEV' } });
   }
 }
-
-
-// ===============================================
-// Funções restantes (listGames, getGameById, update, delete)
-// (A lógica que você já tinha neles está correta)
-// ===============================================
 
 export async function listGames(req: Request, res: Response) {
   console.log('[Games] Processando listagem de jogos (listGames)...');
@@ -252,7 +236,7 @@ export async function updateGame(req: Request, res: Response) {
   console.log(`[Games] Tentativa de atualizar jogo ID: ${id}`);
   try {
     const userId = (req as any).user?.id;
-    const { title, description, genre } = req.body; // Update só lida com JSON simples
+    const { title, description, genre } = req.body; 
 
     if (!userId) {
       console.warn(`[Games] Falha ao atualizar jogo: Usuário não autenticado (401).`);
@@ -279,7 +263,7 @@ export async function updateGame(req: Request, res: Response) {
       }
     });
 
-    await logsService.log('INFO', 'GAME_UPDATED', { gameId: id, userId }); // Usei logsService
+    await logsService.log('INFO', 'GAME_UPDATED', { gameId: id, userId });
 
     const gameWithUrls = {
       ...game,
@@ -343,7 +327,10 @@ export async function deleteGame(req: Request, res: Response) {
     // Deletar do banco (cascade deleta imagens)
     await prisma.game.delete({ where: { id } });
 
-    await logsService.log('INFO', 'GAME_DELETED', { gameId: id, userId }); // Usei logsService
+    await logsService.log('INFO', 'GAME_DELETED', { gameId: id, userId }); 
+
+    await publishGameEvent('GAME_DELETED', { gameId: id, developerId: userId });
+
     console.log(`[Games] Jogo '${game.title}' (ID: ${id}) deletado com sucesso.`);
     res.status(204).send();
   } catch (e: any) {
