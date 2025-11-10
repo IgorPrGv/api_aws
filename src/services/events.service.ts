@@ -1,42 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/services/events.service.ts
-import { sns, snsTopic, sqs, sqsQueueUrl } from '../config/aws';
+import { sns, snsTopic } from '../config/aws';
 import { PublishCommand } from '@aws-sdk/client-sns';
-import { SendMessageCommand } from '@aws-sdk/client-sqs';
 
-export async function publishUploadEvent(fileName: string, s3Key: string) {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[SNS_BYPASS] Evento: FILE_UPLOADED`, { s3Key, fileName });
-    return;
-  }
-
-  if (!snsTopic) {
-    console.warn('SNS Topic not configured, skipping event publish');
-    return;
-  }
-
-  const message = JSON.stringify({
-    eventType: 'FILE_UPLOADED',
-    fileName,
-    s3Key,
-    timestamp: new Date().toISOString(),
-  });
-
-  try {
-    await sns.send(
-      new PublishCommand({
-        TopicArn: snsTopic,
-        Message: message,
-        Subject: 'File Uploaded',
-      }),
-    );
-  } catch (error) {
-    console.error('Error publishing upload event:', error);
-  }
-}
-
-export async function publishGameEvent(eventType: string, data: any) {
-
+/**
+ * Publica um evento JSON padronizado para o tópico SNS.
+ * O worker (SQS) irá receber esta mensagem.
+ * @param eventType 
+ * @param data 
+ */
+export async function publishEvent(eventType: string, data: any) {
   if (process.env.NODE_ENV !== 'production') {
     console.log(`[SNS_BYPASS] Evento: ${eventType}`, data);
     return;
@@ -47,6 +20,7 @@ export async function publishGameEvent(eventType: string, data: any) {
     return;
   }
 
+  // Criar a mensagem JSON padronizada
   const message = JSON.stringify({
     eventType,
     data,
@@ -58,56 +32,10 @@ export async function publishGameEvent(eventType: string, data: any) {
       new PublishCommand({
         TopicArn: snsTopic,
         Message: message,
-        Subject: `Game Event: ${eventType}`,
+        Subject: `Game Event: ${eventType}`, 
       }),
     );
   } catch (error) {
-    console.error('Error publishing game event:', error);
-  }
-}
-
-export async function publishNotification(message: string, subject: string) {
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[SNS_BYPASS] Notificação: ${subject}`);
-    return;
-  }
-
-  if (!snsTopic) {
-    console.warn('SNS Topic not configured, skipping notification');
-    return;
-  }
-
-  try {
-    await sns.send(
-      new PublishCommand({
-        TopicArn: snsTopic,
-        Message: message,
-        Subject: subject,
-      }),
-    );
-  } catch (error) {
-    console.error('Error publishing notification:', error);
-  }
-}
-
-export async function sendToQueue(messageBody: any): Promise<void> {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[SQS_BYPASS] Envio simulado para fila:`, messageBody);
-    return;
-  }
-
-  if (!sqsQueueUrl) {
-    console.warn('SQS Queue URL not configured, skipping queue send');
-    return;
-  }
-  
-  try {
-    await sqs.send(new SendMessageCommand({
-      QueueUrl: sqsQueueUrl,
-      MessageBody: JSON.stringify(messageBody),
-    }));
-  } catch (error) {
-    console.error('Error sending message to SQS:', error);
+    console.error('Error publishing event:', error);
   }
 }

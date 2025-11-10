@@ -4,9 +4,9 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma';
 import { z, ZodError } from 'zod'; 
 import { logsService } from '../services/dynamodb.services';
-import { publishGameEvent } from '../services/events.service';
-import { getS3PublicUrl, deleteFromS3, uploadBufferToS3 } from '../services/storage.services';
-import { sendToQueue } from '../services/events.service';
+import { uploadAndProcessFile } from '../controllers/upload.controller';
+import { getS3PublicUrl, deleteFromS3 } from '../services/storage.services';
+import { publishEvent } from '../services/events.service';
 
 const CreateGameFields = z.object({
   title: z.string().min(1),
@@ -22,26 +22,18 @@ export async function createGame(req: Request, res: Response) {
     const file = ((req.files as any)?.file as Express.Multer.File[] | undefined)?.[0];
     const userId = (req as any).user.id; 
 
-    console.log(`[Games] Enviando ${images.length} imagens para o S3...`);
+    console.log(`[Games] Delegando upload de ${images.length} imagens...`);
     const imagesData = await Promise.all(
       images.slice(0, 3).map(async (f, idx) => ({
-        s3Key: await uploadBufferToS3({ 
-          key: `game-images/${Date.now()}-${f.originalname}`, 
-          contentType: f.mimetype, 
-          body: f.buffer 
-        }).then(r => r.key),
+        s3Key: await uploadAndProcessFile(f, 'game-images'), // Chama o novo serviço
         orderIndex: idx,
       }))
     );
 
     let s3Key: string | null = null;
     if (file) {
-      console.log(`[Games] Enviando arquivo do jogo '${file.originalname}' para o S3...`);
-      s3Key = await uploadBufferToS3({
-        key: `game-files/${Date.now()}-${file.originalname}`,
-        contentType: file.mimetype,
-        body: file.buffer
-      }).then(r => r.key);
+      console.log(`[Games] Delegando upload do arquivo do jogo...`);
+      s3Key = await uploadAndProcessFile(file, 'game-files'); // Chama o novo serviço
     }
 
     // Salvar no RDS (Prisma)
@@ -63,19 +55,6 @@ export async function createGame(req: Request, res: Response) {
     console.log(`[Games] Registando log (DynamoDB)...`);
     await logsService.log('GAME_CREATED', { userId: userId, gameId: game.id });
     
-    console.log(`[Games] Enviando evento para fila (SQS)...`);
-    await sendToQueue({
-      action: 'GAME_CREATED',
-      gameId: game.id,
-      title: game.title,
-    });
-
-    // console.log(`[Games] Publicando evento (SNS)...`);
-    // await publishNotification(
-    //   `Novo jogo publicado: ${game.title} por ${userId}`,
-    //   'Novo Jogo Publicado'
-    // );
-
     const gameWithUrls = {
       ...game,
       fileUrl: game.s3Key ? getS3PublicUrl(game.s3Key) : null,
@@ -325,7 +304,7 @@ export async function deleteGame(req: Request, res: Response) {
     await prisma.game.delete({ where: { id } });
 
     await logsService.log('GAME_DELETED', { gameId: id, userId });
-    await publishGameEvent('GAME_DELETED', { gameId: id, developerId: userId });
+    await publishEvent('GAME_DELETED', { gameId: id, developerId: userId });
 
     console.log(`[Games] Jogo '${game.title}' (ID: ${id}) deletado com sucesso.`);
     res.status(204).send();
