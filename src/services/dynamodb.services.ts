@@ -58,7 +58,6 @@ export class RatingsService {
       GSI1SK: `USER#${userId}`,
     };
 
-    // 2. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new PutCommand({
         TableName: RATINGS_TABLE,
@@ -85,7 +84,6 @@ export class RatingsService {
   }
 
   async deleteRating(userId: string, gameId: string): Promise<void> {
-    // 4. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new DeleteCommand({
         TableName: RATINGS_TABLE,
@@ -98,7 +96,6 @@ export class RatingsService {
   }
 
   async getGameRatings(gameId: string): Promise<Rating[]> {
-    // 5. Usa a sintaxe v3 ddb.send(...)
     const result = await ddb.send(
       new QueryCommand({
         TableName: RATINGS_TABLE,
@@ -146,7 +143,6 @@ export class ReviewsService {
       GSI1SK: `REVIEW#${timestamp}`,
     };
 
-    // 6. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new PutCommand({
         TableName: REVIEWS_TABLE,
@@ -162,7 +158,6 @@ export class ReviewsService {
     limit: number = 20,
     lastKey?: unknown,
   ): Promise<{ items: Review[]; lastKey?: unknown }> {
-    // 7. Usa a sintaxe v3 ddb.send(...)
     const result = await ddb.send(
       new QueryCommand({
         TableName: REVIEWS_TABLE,
@@ -170,7 +165,7 @@ export class ReviewsService {
         ExpressionAttributeValues: {
           ':pk': `GAME#${gameId}`,
         },
-        ScanIndexForward: false, // (Mais recente primeiro)
+        ScanIndexForward: false, 
         Limit: limit,
         ExclusiveStartKey: lastKey as Record<string, any> | undefined,
       }),
@@ -201,7 +196,6 @@ export class ReviewsService {
   }
 
   async deleteReview(gameId: string, reviewSK: string): Promise<void> {
-    // 9. Usa a sintaxe v3 ddb.send(...)
     await ddb.send(
       new DeleteCommand({
         TableName: REVIEWS_TABLE,
@@ -222,10 +216,9 @@ export class LogsService {
     metadata?: Record<string, unknown>,
   ): Promise<void> {
     
-    // 👇 ESTA É A LINHA QUE VOCÊ PEDIU (e já estava no primeiro arquivo)
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[LOG_BYPASS] Ação: ${action}`, metadata || '');
-      return; // <-- Pula a conexão com o DynamoDB
+      return; 
     }
 
     const now = new Date();
@@ -233,7 +226,7 @@ export class LogsService {
     const logTable = process.env.DDB_TABLE_CRUD || 'crud_logs';
 
     const log = {
-      log_id: logId,
+      operation_id: logId,
       action,
       timestamp: now.toISOString(),
       level,
@@ -242,7 +235,6 @@ export class LogsService {
     };
 
     try {
-      // 10. Usa a sintaxe v3 ddb.send(...)
       await ddb.send(
         new PutCommand({
           TableName: logTable,

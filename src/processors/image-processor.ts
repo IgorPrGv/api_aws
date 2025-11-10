@@ -17,7 +17,7 @@ export async function resizeAndSaveImage(
       Bucket: s3Bucket,
       Key: resizedKey,
       Body: resized,
-      ContentType: 'image/jpeg', // ajuste se necessário
+      ContentType: 'image/jpeg', 
     }),
   );
 

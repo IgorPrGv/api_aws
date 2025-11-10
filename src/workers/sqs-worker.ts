@@ -4,14 +4,15 @@
 import 'dotenv/config';
 import { sqs, s3, ddb, sqsQueueUrl, s3Bucket, ddbTable } from '../config/aws';
 
-// 👇 1. Importar os comandos do SDK v3
 import {
   ReceiveMessageCommand,
   DeleteMessageCommand,
-  Message, // <-- O novo tipo para a mensagem SQS
+  Message,
 } from '@aws-sdk/client-sqs';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
+
+import { resizeAndSaveImage } from '../processors/image-processor';
 
 interface SQSMessage {
   eventType: string;
@@ -27,10 +28,9 @@ interface SQSMessage {
 async function processMessage(message: Message): Promise<void> {
   try {
     const body = JSON.parse(message.Body || '{}');
-
     const payload: SQSMessage = body.Message ? JSON.parse(body.Message) : body;
 
-    console.log('Processing message:', payload.eventType);
+    console.log('[Worker] 🔄 Processando mensagem:', payload.eventType);
 
     switch (payload.eventType) {
       case 'FILE_UPLOADED':
@@ -42,110 +42,123 @@ async function processMessage(message: Message): Promise<void> {
         break;
 
       default:
-        console.log('Unknown event type:', payload.eventType);
+        console.log('[Worker] ⚠️ Tipo de evento desconhecido:', payload.eventType);
     }
 
-    // 👇 3. Usar a sintaxe v3 do DynamoDB
     await ddb.send(
       new PutCommand({
-        TableName: ddbTable,
+        TableName: ddbTable, 
         Item: {
-          log_id: Date.now().toString(),
-          action: 'PROCESS',
-          data: { eventType: payload.eventType, processed: true },
+          operation_id: Date.now().toString(), 
+          action: 'PROCESS_FILE',
+          data: { 
+            eventType: payload.eventType, 
+            s3Key: payload.s3Key,
+            processed: true 
+          },
           timestamp: new Date().toISOString(),
         },
       }),
     );
   } catch (error) {
-    console.error('Error processing message:', error);
-    throw error; // Re-throw para que a mensagem volte para a fila
+    console.error('[Worker] ❌ Erro ao processar mensagem:', error);
+    throw error; 
   }
 }
 
 async function handleFileUploaded(payload: SQSMessage): Promise<void> {
   const { s3Key, fileName } = payload;
+  if (!s3Key) {
+    console.error('[Worker] ❌ Mensagem FILE_UPLOADED sem s3Key.');
+    return;
+  }
+  
+  if (!s3Key.startsWith('game-images/')) {
+    console.log(`[Worker] Pulando processamento (não é imagem): ${s3Key}`);
+    return;
+  }
 
-  if (!s3Key) return;
+  console.log(`[Worker] Processando imagem: ${fileName} (${s3Key})`);
 
-  console.log(`Processing file: ${fileName} (${s3Key})`);
-  // ... (lógica de processamento) ...
-
-  // Exemplo: verificar se arquivo existe
   try {
-    // 👇 4. Usar a sintaxe v3 do S3
-    await s3.send(
-      new HeadObjectCommand({
+    console.log(`[Worker] Baixando...`);
+    const s3Object = await s3.send(
+      new GetObjectCommand({
         Bucket: s3Bucket,
         Key: s3Key,
       }),
     );
+    if (!s3Object.Body) throw new Error('S3 object body is empty');
+    
+    // Buffer
+    const buffer = Buffer.from(await s3Object.Body.transformToByteArray());
 
-    console.log(`File ${s3Key} exists in S3`);
-  } catch (error) {
-    console.error(`File ${s3Key} not found in S3`);
+    // Chamar processor
+    console.log(`[Worker] Redimensionando...`);
+    const resizedKey = await resizeAndSaveImage(s3Key, buffer, '_resized');
+
+    // 3. (Opcional) Deletar o arquivo original
+    // await s3.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: s3Key }));
+
+    console.log(`[Worker] ✅ Imagem redimensionada salva como: ${resizedKey}`);
+
+  } catch (error: any) {
+    console.error(`[Worker] Erro ao processar arquivo ${s3Key}:`, error.message);
+    throw error; 
   }
 }
 
 async function handleGameCreated(payload: SQSMessage): Promise<void> {
   const { data } = payload;
-
-  console.log(`New game created: ${data?.gameId} - ${data?.title}`);
-  // ... (lógica de notificação) ...
+  console.log(`[Worker] Novo jogo criado (apenas notificação): ${data?.gameId} - ${data?.title}`);
 }
 
 async function processMessages(): Promise<void> {
   if (!sqsQueueUrl) {
-    console.error('SQS_QUEUE_URL not configured');
+    console.error('[Worker] SQS_QUEUE_URL não configurado. Worker não pode iniciar.');
     return;
   }
 
   try {
-    // 👇 5. Usar a sintaxe v3 do SQS (ReceiveMessage)
     const data = await sqs.send(
       new ReceiveMessageCommand({
         QueueUrl: sqsQueueUrl,
         MaxNumberOfMessages: 10,
         WaitTimeSeconds: 10,
-        VisibilityTimeout: 300, // 5 minutos
+        VisibilityTimeout: 300, 
       }),
     );
 
     if (!data.Messages || data.Messages.length === 0) {
       return;
     }
-
-    console.log(`Received ${data.Messages.length} messages`);
+    console.log(`[Worker] 📥 Recebidas ${data.Messages.length} mensagens`);
 
     for (const message of data.Messages) {
       try {
         await processMessage(message);
 
-        // 👇 6. Usar a sintaxe v3 do SQS (DeleteMessage)
-        // (a v3 ainda usa 'message.ReceiptHandle')
         await sqs.send(
           new DeleteMessageCommand({
             QueueUrl: sqsQueueUrl,
             ReceiptHandle: message.ReceiptHandle!,
           }),
         );
-
-        console.log('Message processed and deleted');
+        console.log('[Worker] Mensagem processada e deletada.');
       } catch (error) {
-        console.error('Failed to process message:', error);
-        // Mensagem voltará para a fila após VisibilityTimeout
+        console.error('[Worker] Falha ao processar mensagem (retornando para a fila):', error);
       }
     }
   } catch (error) {
-    console.error('Error receiving messages:', error);
+    console.error('[Worker] Erro ao receber mensagens:', error);
   }
 }
 
 // Polling loop
-const POLL_INTERVAL = 5000; // 5 segundos
+const POLL_INTERVAL = 5000; 
 
 async function startWorker() {
-  console.log('🚀 SQS Worker started');
+  console.log(' SQS Worker iniciado');
   console.log(`Polling queue: ${sqsQueueUrl}`);
 
   while (true) {
@@ -154,19 +167,9 @@ async function startWorker() {
   }
 }
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('Shutting down worker...');
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  console.log('Shutting down worker...');
-  process.exit(0);
-});
 
 // Start
 startWorker().catch(error => {
-  console.error('Worker crashed:', error);
+  console.error('[Worker]  FATAL: Worker crashou:', error);
   process.exit(1);
 });

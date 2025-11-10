@@ -12,7 +12,7 @@ export async function logCrud(action: CrudAction, data: unknown) {
   }
 
   const item = {
-    log_id: Date.now().toString(),
+    operation_id: Date.now().toString(),
     action,
     data,
     timestamp: new Date().toISOString(),
@@ -25,5 +25,5 @@ export async function logCrud(action: CrudAction, data: unknown) {
     }),
   );
 
-  return item.log_id;
+  return item.operation_id;
 }
