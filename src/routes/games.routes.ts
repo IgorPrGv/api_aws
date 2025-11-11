@@ -21,14 +21,11 @@ const upload = multer({
   limits: { files: 4, fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
-// --- Rotas Públicas (Não precisam de login) ---
 gamesRouter.get("/", listGames);
 
-
-// --- Rotas de Desenvolvedor (DEV) ---
 gamesRouter.get(
   "/my-games", 
-  auth({ roles: [UserType.DEV] }), // <-- 3. APLICAR O MIDDLEWARE
+  auth({ roles: [UserType.DEV] }), 
   getMyGames
 );
 
@@ -44,13 +41,13 @@ gamesRouter.post(
 
 gamesRouter.put(
   '/:id', 
-  auth({ roles: [UserType.DEV] }), // <-- 3. APLICAR O MIDDLEWARE
+  auth({ roles: [UserType.DEV] }),
   updateGame
 );
 
 gamesRouter.delete(
   '/:id', 
-  auth({ roles: [UserType.DEV] }), // <-- 3. APLICAR O MIDDLEWARE
+  auth({ roles: [UserType.DEV] }), 
   deleteGame
 );
 

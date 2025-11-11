@@ -25,7 +25,7 @@ export async function createGame(req: Request, res: Response) {
     console.log(`[Games] Delegando upload de ${images.length} imagens...`);
     const imagesData = await Promise.all(
       images.slice(0, 3).map(async (f, idx) => ({
-        s3Key: await uploadAndProcessFile(f, 'game-images'), // Chama o novo serviço
+        s3Key: await uploadAndProcessFile(f, 'game-images'), 
         orderIndex: idx,
       }))
     );
@@ -33,7 +33,7 @@ export async function createGame(req: Request, res: Response) {
     let s3Key: string | null = null;
     if (file) {
       console.log(`[Games] Delegando upload do arquivo do jogo...`);
-      s3Key = await uploadAndProcessFile(file, 'game-files'); // Chama o novo serviço
+      s3Key = await uploadAndProcessFile(file, 'game-files'); 
     }
 
     // Salvar no RDS (Prisma)

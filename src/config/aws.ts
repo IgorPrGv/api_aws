@@ -8,13 +8,6 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 // --- Configuração Base ---
 const region = process.env.AWS_REGION || 'us-east-1';
 
-/**
- * Configuração base para todos os clientes v3.
- * O SDK v3 é inteligente e detecta credenciais automaticamente na seguinte ordem:
- * 1. Variáveis de ambiente (AWS_ACCESS_KEY_ID, etc.) - Perfeito para local
- * 2. Arquivo ~/.aws/credentials
- * 3. IAM Role (anexada na EC2) - Perfeito para produção
- */
 const clientConfig = { region };
 
 // ===================== S3 =====================
@@ -26,13 +19,12 @@ if (!s3Bucket) {
 }
 
 // ===================== DynamoDB =====================
-// O DocumentClient v3 precisa ser "construído" a partir do cliente base
 const ddbBaseClient = new DynamoDBClient(clientConfig);
 
 // Opções para facilitar a tradução de JSON para o formato DynamoDB
 const marshallOptions = {
-  removeUndefinedValues: true, // Não armazena chaves com valor 'undefined'
-  convertEmptyValues: true, // Converte strings vazias "" para null
+  removeUndefinedValues: true, 
+  convertEmptyValues: true, 
 };
 
 export const ddb = DynamoDBDocumentClient.from(ddbBaseClient, {

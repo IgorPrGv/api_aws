@@ -5,21 +5,20 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 export async function resizeAndSaveImage(
   originalKey: string,
   buffer: Buffer,
-  suffix = '_resized',
 ) {
   const resized = await sharp(buffer).resize(800).toBuffer();
-  const resizedKey = originalKey.replace(
-    /(\.[^.]+)$/,
-    `${suffix}$1`,
-  );
+
   await s3.send(
     new PutObjectCommand({
       Bucket: s3Bucket,
-      Key: resizedKey,
+      Key: originalKey, 
       Body: resized,
-      ContentType: 'image/jpeg', 
+      ContentType: 'image/jpeg',
+      Metadata: {
+        'resized': 'true'
+      }
     }),
   );
 
-  return resizedKey;
+  return originalKey;
 }

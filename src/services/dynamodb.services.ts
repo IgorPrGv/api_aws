@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // src/services/dynamodb.service.ts
 import { ddb } from '../config/aws';
-// 👇 1. Importa os 'Commands' específicos do SDK v3
 import {
   PutCommand,
   GetCommand,
@@ -69,7 +68,6 @@ export class RatingsService {
   }
 
   async getRating(userId: string, gameId: string): Promise<Rating | null> {
-    // 3. Usa a sintaxe v3 ddb.send(...)
     const result = await ddb.send(
       new GetCommand({
         TableName: RATINGS_TABLE,
@@ -118,12 +116,12 @@ export class RatingsService {
   }
 
   async deleteAllRatingsForGame(gameId: string): Promise<number> {
-    // 1. Encontrar todos os ratings para este jogo usando o GSI1
+    // todos os ratings para este jogo usando o GSI1
     const ratings = await this.getGameRatings(gameId);
     
     if (ratings.length === 0) return 0;
 
-    // 2. Criar um lote de 'DeleteRequest'
+    // um lote de 'DeleteRequest'
     const deleteRequests = ratings.map(r => ({
       DeleteRequest: {
         Key: {
@@ -133,7 +131,7 @@ export class RatingsService {
       },
     }));
 
-    // 3. Enviar em lotes de 25 (limite do DynamoDB)
+    // Enviar em lotes de 25 
     let deletedCount = 0;
     for (let i = 0; i < deleteRequests.length; i += 25) {
       const batch = deleteRequests.slice(i, i + 25);

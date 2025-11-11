@@ -4,7 +4,6 @@ import { addDownload, getDownloads, deleteDownload } from '../controllers/downlo
 
 export const downloadsRouter = Router();
 
-// Todas as rotas de /downloads exigem autenticação
 downloadsRouter.use(auth());
 
 downloadsRouter.post('/', addDownload);

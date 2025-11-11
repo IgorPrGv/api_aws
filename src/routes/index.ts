@@ -1,5 +1,5 @@
 // src/routes/index.ts
-import { Router, Request, Response, NextFunction } from 'express'; // 1. Importar tipos
+import { Router, Request, Response, NextFunction } from 'express'; 
 import { filesRouter } from './files.routes';
 import { gamesRouter } from './games.routes';
 import { reviewsRouter } from './reviews.routes';
@@ -25,13 +25,10 @@ routes.get('/health', (_req, res) => {
   });
 });
 
-// aqui vira /auth/... (e com prefixo global, /api/auth/...)
 routes.use("/auth", authRoutes);
 
-// Files
 routes.use('/files', filesRouter);
 
-// Games (base routes)
 routes.use('/games', gamesRouter);
 
 // Reviews (nested under /games/:id/reviews)

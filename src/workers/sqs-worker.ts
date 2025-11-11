@@ -25,22 +25,57 @@ interface SQSMessage {
   };
 }
 
+function parseS3Event(s3Event: any): SQSMessage {
+  try {
+    const record = s3Event.Records[0];
+    const s3Key = record.s3.object.key;
+    
+    const decodedKey = decodeURIComponent(s3Key.replace(/\+/g, ' '));
+    const fileName = decodedKey.split('/').pop() || '';
+
+    return {
+      eventType: 'FILE_UPLOADED', // Evento normalizado
+      s3Key: decodedKey,
+      fileName: fileName
+    };
+  } catch (err) {
+    console.error("[Worker] Erro ao parsear evento S3:", err);
+    return { eventType: 'S3_PARSE_ERROR' }; 
+  }
+}
+
 async function processMessage(message: Message): Promise<void> {
   try {
     const body = JSON.parse(message.Body || '{}');
-    const payload: SQSMessage = body.Message ? JSON.parse(body.Message) : body;
+    let payload: SQSMessage;
 
-    console.log('[Worker] Processando mensagem:', payload.eventType);
+    if (body.Message) {
+      const innerMessage = JSON.parse(body.Message);
+      if (innerMessage.Records) {
+        console.log("[Worker] Recebida notificação S3 (via SNS)");
+        payload = parseS3Event(innerMessage);
+      } else {
+        payload = innerMessage;
+      }
+    } else if (body.Records) {
+      console.log("[Worker] Recebida notificação S3 (direta)");
+      payload = parseS3Event(body);
+    } else {
+      payload = body;
+    }
+
+    console.log('[SQS] Processando mensagem:', payload.eventType);
 
     switch (payload.eventType) {
       case 'FILE_UPLOADED':
         await handleFileUploaded(payload);
         break;
-
       case 'GAME_CREATED':
         await handleGameCreated(payload);
         break;
-
+      case 'GAME_DELETED':
+        await handleGameDeleted(payload);
+        break;
       default:
         console.log('[Worker] Tipo de evento desconhecido:', payload.eventType);
     }
@@ -89,14 +124,16 @@ async function handleFileUploaded(payload: SQSMessage): Promise<void> {
       }),
     );
     if (!s3Object.Body) throw new Error('S3 object body is empty');
+
+    if (s3Object.Metadata && s3Object.Metadata['resized'] === 'true') {
+      console.log(`[Worker] Imagem já redimensionada, pulando loop: ${s3Key}`);
+      return;
+    }
     
     const buffer = Buffer.from(await s3Object.Body.transformToByteArray());
 
     console.log(`[Worker] Redimensionando...`);
-    const resizedKey = await resizeAndSaveImage(s3Key, buffer, '_resized');
-
-    // 3. (Opcional) Deletar o arquivo original
-    // await s3.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: s3Key }));
+    const resizedKey = await resizeAndSaveImage(s3Key, buffer);
 
     console.log(`[Worker] Imagem redimensionada salva como: ${resizedKey}`);
 
