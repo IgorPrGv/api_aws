@@ -6,7 +6,7 @@ export async function resizeAndSaveImage(
   originalKey: string,
   buffer: Buffer,
 ) {
-  const resized = await sharp(buffer).resize(800).toBuffer();
+  const resized = await sharp(buffer).resize(800, null, { withoutEnlargement: false }).toBuffer();
 
   await s3.send(
     new PutObjectCommand({

@@ -102,7 +102,7 @@ async function processMessage(message: Message): Promise<void> {
 }
 
 async function handleFileUploaded(payload: SQSMessage): Promise<void> {
-  const { s3Key, fileName } = payload;
+  const { s3Key, fileName } = payload.data || {};
   if (!s3Key) {
     console.error('[Worker] Mensagem FILE_UPLOADED sem s3Key.');
     return;
