@@ -26,6 +26,7 @@ export async function uploadBufferToS3({ key, contentType, body }: UploadParams)
       Key: key,
       Body: body,
       ContentType: contentType,
+      ACL: 'public-read',
     }),
   );
 

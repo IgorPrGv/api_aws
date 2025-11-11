@@ -16,7 +16,8 @@ export async function resizeAndSaveImage(
       ContentType: 'image/jpeg',
       Metadata: {
         'resized': 'true'
-      }
+      },
+      ACL: 'public-read'
     }),
   );
 
